@@ -1,6 +1,6 @@
-import Lanauage from "src/Lanauage";
-import { MAX_CHAR_LENGTH, EXPRESSIONS_FORMAT } from "src/constants";
-import utils from "src/util/utils";
+import Lanauage from "@/Lanauage";
+import { MAX_CHAR_LENGTH, EXPRESSIONS_FORMAT } from "@/constants";
+import { leftPad } from "@daracl/core";
 
 export default (date: Date, format: string) => {
   format = format || "YYYY-MM-DD";
@@ -44,7 +44,7 @@ const expressionsFunction: any = {
     return String(date.getMonth() + 1);
   },
   MM: (date: Date) => {
-    return utils.pad(date.getMonth() + 1, 2);
+    return leftPad(date.getMonth() + 1, 2);
   },
   MMM: (date: Date) => {
     return Lanauage.getMonthsMessage(date.getMonth());
@@ -56,13 +56,13 @@ const expressionsFunction: any = {
     return String(date.getDate());
   },
   DD: (date: Date) => {
-    return utils.pad(date.getDate(), 2);
+    return leftPad(date.getDate(), 2);
   },
   d: (date: Date) => {
     return String(date.getDate());
   },
   dd: (date: Date) => {
-    return utils.pad(date.getDate(), 2);
+    return leftPad(date.getDate(), 2);
   },
   ddd: (date: Date) => {
     return Lanauage.getWeeksMessage(date.getDay());
@@ -74,13 +74,13 @@ const expressionsFunction: any = {
     return String(date.getHours());
   },
   HH: (date: Date) => {
-    return utils.pad(date.getHours(), 2);
+    return leftPad(date.getHours(), 2);
   },
   h: (date: Date) => {
     return getH(date);
   },
   hh: (date: Date) => {
-    return utils.pad(getH(date), 2);
+    return leftPad(getH(date), 2);
   },
   a: (date: Date) => {
     return String(date.getFullYear()).slice(-2);
@@ -92,16 +92,16 @@ const expressionsFunction: any = {
     return String(date.getMinutes());
   },
   mm: (date: Date) => {
-    return utils.pad(date.getMinutes(), 2);
+    return leftPad(date.getMinutes(), 2);
   },
   s: (date: Date) => {
     return String(date.getSeconds());
   },
   ss: (date: Date) => {
-    return utils.pad(date.getSeconds(), 2);
+    return leftPad(date.getSeconds(), 2);
   },
   SSS: (date: Date) => {
-    return utils.pad(date.getMilliseconds(), 3);
+    return leftPad(date.getMilliseconds(), 3);
   },
 };
 

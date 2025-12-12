@@ -1,5 +1,5 @@
-import Lanauage from "src/Lanauage";
-import { DEFAULT_FORMAT, EXPRESSIONS_FORMAT, MAX_CHAR_LENGTH } from "src/constants";
+import Lanauage from "@/Lanauage";
+import { DEFAULT_FORMAT, EXPRESSIONS_FORMAT, MAX_CHAR_LENGTH } from "@/constants";
 
 type DateInfo = {
   year: number;

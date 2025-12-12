@@ -1,5 +1,5 @@
-import DaraDateTimePicker from "./DateTimePicker";
+export {DateTimePicker} from "./DateTimePicker";
 
 import "../style/daracl.datetimepicker.scss";
 
-export = DaraDateTimePicker;
+import "./global"

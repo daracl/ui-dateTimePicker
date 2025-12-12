@@ -74,7 +74,7 @@ body.dark .daracl-datetime-wrapper,
     display: block;
   }
 
-  .sun {
+  .ddtp-sun {
     & > span {
       color: var(--sunday);
     }
@@ -226,7 +226,7 @@ body.dark .daracl-datetime-wrapper,
       }
     }
 
-    .time-today {
+    .ddtp-today {
       &:hover {
         background-color: var(--button-hover-color);
       }
@@ -238,26 +238,7 @@ body.dark .daracl-datetime-wrapper,
       border-spacing: 0px;
       margin: 2px 10px;
       width: inherit;
-
-      tr {
-        background-color: var(--background-color);
-      }
-
-      td,
-      th {
-        border-width: 0px !important;
-        background-color: var(--background-color);
-        padding: 7px;
-      }
-
-      .ddtp-day-footer {
-        td,
-        th {
-          border-width: 0px !important;
-          background-color: var(--background-color);
-          padding: 0px;
-        }
-      }
+      background-color: var(--background-color);
 
       .ddtp-day-label {
         font-weight: bold;
@@ -276,7 +257,7 @@ body.dark .daracl-datetime-wrapper,
         border-width: 0px !important;
         background: var(--background-color);
 
-        &.event::after {
+        &.ddtp-event::after {
           content: "•";
           color: #f78536;
           font-size: 1.4em;
@@ -308,7 +289,7 @@ body.dark .daracl-datetime-wrapper,
           transition: opacity 0.2s ease-out;
         }
 
-        &.today {
+        &.ddtp-today {
           > span {
             z-index: 2;
             position: relative;

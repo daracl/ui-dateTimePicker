@@ -1,4 +1,4 @@
-import { DateViewMode } from "src/constants";
+import { DateViewMode } from "@/constants";
 
 export interface OptionCallback {
   (...params: any[]): any;

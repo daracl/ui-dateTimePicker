@@ -2,9 +2,9 @@
 
 An easy to use lightweight javascript calendar library.
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/darainfo/daracl.datetimepicker/blob/main/LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/daracl/ui-dateTimePicker/blob/main/LICENSE)
 [![npm version](https://badge.fury.io/js/@daracl%2Fdatetimepicker.svg)](https://badge.fury.io/js/@daracl%2Fdatetimepicker)
-[![npm](https://img.shields.io/npm/dt/@daracl%2Fdatetimepicker)](https://github.com/darainfo/daracl.datetimepicker/releases)
+[![npm](https://img.shields.io/npm/dt/@daracl%2Fdatetimepicker)](https://github.com/daracl/ui-dateTimePicker/releases)
 [![minzipped size](https://img.shields.io/bundlephobia/minzip/@daracl%2Fdatetimepicker)](https://bundlephobia.com/package/@daracl%2Fdatetimepicker)
 
 
@@ -16,7 +16,7 @@ An easy to use lightweight javascript calendar library.
 | Latest ✔                                                                                 | Latest ✔                                                                                    | Latest ✔                                                                                 | Latest ✔                                                                              | Latest ✔                                                                           |
 
 <p>
-<img src="https://github.com/darainfo/daracl.dateTimePicker/blob/main/demo.gif?raw=true"/>
+<img src="https://github.com/daracl/ui-dateTimePicker/blob/main/demo.gif?raw=true"/>
 </p>
 
 # Installation
@@ -31,7 +31,7 @@ OR
 yarn add @daracl/datetimepicker
 ```
 
-or download [zip](https://github.com/darainfo/daracl.datetimepicker/releases)
+or download [zip](https://github.com/daracl/ui-dateTimePicker/releases)
 
 # start
 

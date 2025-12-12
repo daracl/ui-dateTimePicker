@@ -1,6 +1,6 @@
 import dateFormat from './format';
 
-export default class DaraDate {
+export class DaraDate {
 
     private date;
 

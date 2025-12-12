@@ -3,9 +3,10 @@ import { Message } from "@t/Message";
 import format from "./format";
 import parser from "./util/parser";
 import Lanauage from "./Lanauage";
-import utils from "./util/utils";
-import DaraDate from "./DaraDate";
+import { closestElement } from "./util/utils";
+import { DaraDate } from "./DaraDate";
 import { DAY_STYLE_CLASS, DEFAULT_FORMAT, DateViewMode } from "./constants";
+import { isFunction, isNumeric, leftPad, leftPadClamp } from "@daracl/core";
 
 declare const APP_VERSION: string;
 
@@ -16,7 +17,7 @@ let DEFAULT_OPTIONS: DateTimePickerOptions = {
   autoClose: true,
   isRTL: false,
   mode: DateViewMode.date,
-  enableTodayBtn: true,
+  enableTodayBtn: false,
   showMonthAfterYear: false,
   isPositionFixed: false,
   format: "",
@@ -48,7 +49,7 @@ let daraDatetimeIdx = 0;
  * @class DateTimePicker1
  * @typedef {DateTimePicker}
  */
-export default class DateTimePicker {
+export class DateTimePicker {
   public static VERSION = `${APP_VERSION}`;
   public static format = format;
   public static parser = parser;
@@ -230,7 +231,7 @@ export default class DateTimePicker {
         minDate = dt;
       }
       this.minYear = minDate.getFullYear();
-      this.minMonth = +(this.minYear + utils.pad(minDate.getMonth(), 2));
+      this.minMonth = +(this.minYear + leftPad(minDate.getMonth(), 2));
       return new Date(minDate.getFullYear(), minDate.getMonth(), minDate.getDate(), 0, 0).getTime();
     }
     return -1;
@@ -249,7 +250,7 @@ export default class DateTimePicker {
         maxDate = dt;
       }
       this.maxYear = maxDate.getFullYear();
-      this.maxMonth = +(this.maxYear + utils.pad(maxDate.getMonth(), 2));
+      this.maxMonth = +(this.maxYear + leftPad(maxDate.getMonth(), 2));
       return new Date(maxDate.getFullYear(), maxDate.getMonth(), maxDate.getDate(), 23, 59).getTime();
     }
     return -1;
@@ -342,7 +343,7 @@ export default class DateTimePicker {
     });
 
     // today click
-    this.datetimeElement.querySelector(".time-today")?.addEventListener("click", (e: Event) => {
+    this.datetimeElement.querySelector(".ddtp-today")?.addEventListener("click", (e: Event) => {
       const initDate = new DaraDate(parser(this.todayDate, DEFAULT_FORMAT.date) || new Date());
       this.currentDate.setYear(initDate.getYear());
       this.currentDate.setMonth(initDate.getMonth() - 1);
@@ -355,6 +356,14 @@ export default class DateTimePicker {
     return this._viewMode === DateViewMode.time || this._viewMode === DateViewMode.datetime;
   }
 
+  private getTimeNumberValue(val:string){
+    if(!isNumeric(val)){
+      return 0;
+    }
+
+    return parseInt(val,10);
+  }
+
   /**
    * 시간 분 설정 이벤트 처리.
    *
@@ -365,43 +374,59 @@ export default class DateTimePicker {
 
     let hh = this.currentDate.format("HH");
 
-    const hourInputEle = this.datetimeElement.querySelector(".ddtp-hour") as HTMLInputElement;
-    const hourRangeEle = this.datetimeElement.querySelector(".ddtp-hour-range") as HTMLInputElement;
+    const datetimeElement = this.datetimeElement; 
+
+    const hourInputEle = datetimeElement.querySelector(".ddtp-hour") as HTMLInputElement;
+    const hourRangeEle = datetimeElement.querySelector(".ddtp-hour-range") as HTMLInputElement;
     hourInputEle.value = hh;
     hourRangeEle.value = hh;
 
     hourInputEle.addEventListener("input", (e: Event) => {
       const targetElement = e.target as HTMLInputElement;
-      const addVal = utils.pad(targetElement.value, 2);
+
+      let val = this.getTimeNumberValue(targetElement.value);
+
+      let addVal = leftPadClamp(val,2,'0');
+      
+      if(parseInt(addVal,10)>23){
+        addVal = 23+'';
+      }
+
       hourInputEle.value = addVal;
       hourRangeEle.value = addVal;
     });
 
     hourRangeEle.addEventListener("input", (e: Event) => {
       const targetElement = e.target as HTMLInputElement;
-      hourInputEle.value = utils.pad(targetElement.value, 2);
+      hourInputEle.value = leftPadClamp(targetElement.value,2,'0');
     });
 
     let mm = this.currentDate.format("mm");
-    const minuteInputEle = this.datetimeElement.querySelector(".ddtp-minute") as HTMLInputElement;
-    const minuteRangeEle = this.datetimeElement.querySelector(".ddtp-minute-range") as HTMLInputElement;
+    const minuteInputEle = datetimeElement.querySelector(".ddtp-minute") as HTMLInputElement;
+    const minuteRangeEle = datetimeElement.querySelector(".ddtp-minute-range") as HTMLInputElement;
 
     minuteInputEle.value = mm;
     minuteRangeEle.value = mm;
 
     minuteInputEle.addEventListener("input", (e: Event) => {
       const targetElement = e.target as HTMLInputElement;
-      const addVal = utils.pad(targetElement.value, 2);
+      let val = this.getTimeNumberValue(targetElement.value);
+      let addVal = leftPadClamp(val,2,'0');
+
+      if(parseInt(addVal,10)>59){
+        addVal = 59+'';
+      }
+
       minuteInputEle.value = addVal;
       minuteRangeEle.value = addVal;
     });
 
     minuteRangeEle.addEventListener("input", (e: Event) => {
       const targetElement = e.target as HTMLInputElement;
-      minuteInputEle.value = utils.pad(targetElement.value, 2);
+      minuteInputEle.value = leftPadClamp(targetElement.value,2,'0');
     });
 
-    this.datetimeElement.querySelector(".time-select")?.addEventListener("click", (e: Event) => {
+    datetimeElement.querySelector(".time-select")?.addEventListener("click", (e: Event) => {
       this.currentDate.setHour(+hourInputEle.value);
       this.currentDate.setMinutes(+minuteInputEle.value);
       this.dateChangeEvent(e);
@@ -521,7 +546,7 @@ export default class DateTimePicker {
    * @param e
    */
   private _documentClickEvent = (e: Event) => {
-    if (this.isVisible && e.target != this.targetElement && !utils.closestElement(e.target as HTMLElement, this.datetimeElement)) {
+    if (this.isVisible && e.target != this.targetElement && !closestElement(e.target as HTMLElement, this.datetimeElement)) {
       this.hide();
     }
   };
@@ -543,7 +568,7 @@ export default class DateTimePicker {
   private afterChangeDatepicker() {
     const formatValue = this.currentDate.format(this.dateFormat);
 
-    if (this.options.afterChangeDatepicker && utils.isFunction(this.options.afterChangeDatepicker)) {
+    if (this.options.afterChangeDatepicker && isFunction(this.options.afterChangeDatepicker)) {
       this.options.afterChangeDatepicker(formatValue, this.viewMode);
     }
   }
@@ -555,7 +580,7 @@ export default class DateTimePicker {
   private beforeChangeDatepicker() {
     const formatValue = this.currentDate.format(this.dateFormat);
 
-    if (this.options.beforeChangeDatepicker && utils.isFunction(this.options.beforeChangeDatepicker)) {
+    if (this.options.beforeChangeDatepicker && isFunction(this.options.beforeChangeDatepicker)) {
       const reval = this.options.beforeChangeDatepicker(formatValue, (result: boolean) => {
         if (result === false) {
           return;
@@ -631,7 +656,7 @@ export default class DateTimePicker {
                     
                     <tfoot class="ddtp-day-footer">
                         <td colspan="7">
-                            <div style="width:99%;text-align:center;margin-top: 5px;${this.options.enableTodayBtn ? "" : "display:none;"}"><button type="button" class="time-today">${Lanauage.getMessage("today")}</button></div>
+                            <div style="width:99%;text-align:center;margin-top: 5px;${this.options.enableTodayBtn ? "" : "display:none;"}"><button type="button" class="ddtp-today">${Lanauage.getMessage("today")}</button></div>
                             <div class="footer-tooltip"></div>
                         </td>
                     </tfoot>
@@ -640,11 +665,11 @@ export default class DateTimePicker {
                 <div class="ddtp-times">
                         <div class="time-container">
                             <div class="ddtp-time">
-                                <span>H: </span><input type="number" class="ddtp-hour" min="0" max="23">
+                                <span>H: </span><input type="number" class="ddtp-hour" min="0" max="23" maxlength="2">
                                 <input type="range" min="0" max="23" class="ddtp-hour-range">
                             </div>
                             <div class="ddtp-time">
-                                <span>M: </span><input type="number" class="ddtp-minute" min="0" max="59">
+                                <span>M: </span><input type="number" class="ddtp-minute" min="0" max="59" size="2" maxlength="2">
                                 <input type="range" min="0" max="59" class="ddtp-minute-range">
                             </div>
                         </div>
@@ -695,7 +720,7 @@ export default class DateTimePicker {
 
     (this.datetimeElement.querySelector(".ddtp-header-year") as Element).textContent = `${startYear} ~ ${startYear + 15}`;
 
-    const beforeDrawDateFlag = utils.isFunction(this.options.beforeDrawDate);
+    const beforeDrawDateFlag = isFunction(this.options.beforeDrawDate);
     const beforeDrawDateFn = beforeDrawDateFlag ? this.options.beforeDrawDate : false;
 
     const calHTML: string[] = [];
@@ -796,7 +821,7 @@ export default class DateTimePicker {
 
     (this.datetimeElement.querySelector(".ddtp-header-month") as Element).textContent = this.currentDate.format("MMMM");
 
-    const beforeDrawDateFlag = utils.isFunction(this.options.beforeDrawDate);
+    const beforeDrawDateFlag = isFunction(this.options.beforeDrawDate);
     const beforeDrawDateFn = beforeDrawDateFlag ? this.options.beforeDrawDate : false;
 
     const calHTML: string[] = [];
@@ -872,7 +897,7 @@ export default class DateTimePicker {
       monthFirstDate.addDate(-(7 + day));
     }
 
-    const beforeDrawDateFlag = utils.isFunction(this.options.beforeDrawDate);
+    const beforeDrawDateFlag = isFunction(this.options.beforeDrawDate);
     const beforeDrawDateFn = beforeDrawDateFlag ? this.options.beforeDrawDate : false;
 
     const calHTML = [];
@@ -903,7 +928,7 @@ export default class DateTimePicker {
         }
       }
 
-      addStylceClass += this.todayDate == dateItemFormat ? " today" : "";
+      addStylceClass += this.todayDate == dateItemFormat ? " ddtp-today" : "";
       addStylceClass += disabled ? " disabled" : "";
 
       let tooltip = "";
@@ -911,7 +936,7 @@ export default class DateTimePicker {
         const reval = beforeDrawDateFn({ mode: this._viewMode, item: dateItem, date: dateItem.format(this.dateFormat) });
         addStylceClass += reval.style ? " " + reval.style : "";
 
-        addStylceClass += reval.check ? " event" : "";
+        addStylceClass += reval.check ? " ddtp-event" : "";
         tooltip = reval.tooltip;
         tooltip = tooltip ? `title="${tooltip}"` : "";
       }
@@ -951,7 +976,7 @@ export default class DateTimePicker {
       return true;
     }
 
-    let yearMonth = +(year + utils.pad(month, 2));
+    let yearMonth = +(year + leftPad(month, 2));
 
     if ((this.minMonth != -1 && this.minMonth > yearMonth) || (this.maxMonth != -1 && this.maxMonth < yearMonth)) {
       return true;
