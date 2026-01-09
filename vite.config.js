@@ -41,8 +41,6 @@ export default defineConfig(({ mode }) => {
         },
         external: [
           "@daracl/core",
-          "@daracl/toast",
-          "@daracl/tree",
         ],
        // plugins: isProd ? [terser()] : [], 
         output: {

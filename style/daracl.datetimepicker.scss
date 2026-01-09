@@ -106,7 +106,7 @@ body.dark .daracl-datetime-wrapper,
         .time-container {
           display: block;
         }
-        & > .time-btn {
+        & > .ddtp-btn {
           left: 0px;
           right: auto;
         }
@@ -346,7 +346,7 @@ body.dark .daracl-datetime-wrapper,
         }
       }
 
-      > .time-btn {
+      > .ddtp-btn {
         position: absolute;
         top: 9px;
         width: 55px;

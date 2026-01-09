@@ -673,7 +673,7 @@ export class DateTimePicker {
                                 <input type="range" min="0" max="59" class="ddtp-minute-range">
                             </div>
                         </div>
-                        <div class="time-btn">
+                        <div class="ddtp-btn">
                             <button type="button" class="time-select">${Lanauage.getMessage("ok")}</button>
                         </div>
                 </div>
