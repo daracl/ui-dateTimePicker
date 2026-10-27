@@ -1,6 +1,6 @@
 {
   "name": "@daracl/datetimepicker",
-  "version": "0.0.13",
+  "version": "0.0.14",
   "sideEffects": false,
   "description": "Dacacl Datetime picker",
   "author": {
@@ -60,6 +60,9 @@
   },
   "peerDependencies": {
       "@daracl/core": "^0.0.5"
+  },
+  "dependencies": {
+    "@daracl/ui-style": "^0.0.1"
   },
   "devDependencies": {
     "@daracl/core": "^0.0.5",

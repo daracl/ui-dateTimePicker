@@ -191,5 +191,21 @@ var aaa = Daracl.dateTimePicker.create('#date', {
 |        | abbr          | ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]                                                                          |
 
 
+# Theme
+
+색상 값은 [`@daracl/ui-style`](https://www.npmjs.com/package/@daracl/ui-style) 의 테마 변수(`--dui-*`)를 사용합니다.
+light 값이 기본값으로 들어 있어 별도 설정 없이도 표시되지만, **dark 테마를 쓰려면 테마 변수 CSS 를 함께 로드**해야 합니다.
+
+```js
+import '@daracl/ui-style/theme-vars.css';
+
+// dark 로 전환
+document.documentElement.setAttribute('data-daracl-theme', 'dark');
+```
+
+OS 설정(`prefers-color-scheme: dark`)도 따르며, `data-daracl-theme` 속성이 있으면 그 값이 우선합니다.
+
+> 이전 버전의 `body.dark` / `.daracl-datetime-wrapper.dark` 클래스 방식은 지원하지 않습니다.
+
 ## License
 Darainfo is under [MIT License](./LICENSE).

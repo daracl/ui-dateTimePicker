@@ -1,53 +1,42 @@
+// 색상 / 테두리 같은 공통 값은 @daracl/ui-style 의 테마 변수(--dui-*)를 사용한다. (light 값이 fallback 으로 들어 있음)
+// dark 등 다른 테마는 앱이 '@daracl/ui-style/theme-vars.css' 를 로드하고 <html data-daracl-theme="dark"> 로 전환한다.
+// (body.dark / .daracl-datetime-wrapper.dark 클래스 방식은 지원하지 않는다.)
+@use "@daracl/ui-style/abstracts" as style;
+@use "@daracl/ui-style/themes" as themes;
+@use "@daracl/ui-style/base" as base;
+
+// 선택한 날짜 배경은 ui-style 의 선택색(selected-*)과 의미가 달라 datetimepicker 전용 변수로 둔다.
+// 테마 전환 방식(data-daracl-theme / OS 설정)은 ui-style 과 동일하게 맞춘다.
+$ddtp-themes: (
+  light: (
+    select-bg: #0abf30,
+  ),
+  dark: (
+    select-bg: #ffffff,
+  ),
+);
+
+@include themes.define-themes(".daracl-datetime-wrapper", $auto-dark: true, $prefix: "ddtp", $themes: $ddtp-themes);
+
+// 전역 이름(fadeIn / fadeOut)은 ui-dialog / ui-toast 와 충돌하므로 ddtp- 접두사를 붙인다.
+@include base.keyframes-fade("ddtp");
+
 .daracl-datetime-hidden {
   visibility: visible;
   width: 0px;
   height: 0px;
-  z-index: 1000;
+  z-index: #{style.$z-dropdown};
 }
 
 .daracl-datetime-wrapper {
-  --color: #34495e;
-  --light: #ffffff;
-  --success: #0abf30;
-  --error: #e24d4c;
-  --warning: #e9bd0c;
-  --info: #3498db;
-  --background-color: #ffffff;
-  --sunday: #f00d0d;
-  --border-color: #d3d2d2;
-  --select-background-color: #0abf30;
-  --button-hover-color: #d4d4d48a;
-  --disabled-background-color: #f1f1f18a;
-  --today-bg: #a9d5ff;
-}
-
-body.dark .daracl-datetime-wrapper,
-.daracl-datetime-wrapper.dark {
-  --color: #d0d6e1;
-  --light: #ffffff;
-  --success: #0abf30;
-  --error: #e24d4c;
-  --warning: #e9bd0c;
-  --info: #3498db;
-  --background-color: #070d19;
-  --sunday: #f00d0d;
-  --border-color: #6e7380;
-  --today-bg: #5660d9;
-  --today-color: #5660d9;
-  --select-background-color: #ffffff;
-  --button-hover-color: #31316c;
-  --disabled-background-color: #818181;
-}
-
-.daracl-datetime-wrapper {
-  z-index: 1000;
+  z-index: #{style.$z-dropdown};
   display: none;
 
   *,
   *::before,
   *::after {
     box-sizing: content-box;
-    color: var(--color);
+    color: themes.themed(font-color);
   }
 
   &.layer {
@@ -60,12 +49,12 @@ body.dark .daracl-datetime-wrapper,
 
   &.show {
     display: block;
-    animation: fadeIn 0.5s;
+    animation: ddtp-fade-in 0.5s;
     animation-fill-mode: forwards;
   }
 
   &.hide {
-    animation: fadeOut 0.5s;
+    animation: ddtp-fade-out 0.5s;
     animation-fill-mode: forwards;
     //animation: daraToastHide 0.3s ease forwards;
   }
@@ -76,7 +65,7 @@ body.dark .daracl-datetime-wrapper,
 
   .ddtp-sun {
     & > span {
-      color: var(--sunday);
+      color: themes.themed(sunday-color);
     }
   }
 
@@ -84,9 +73,9 @@ body.dark .daracl-datetime-wrapper,
     border-radius: 4px;
     padding: 10px;
     width: 235px;
-    background-color: var(--background-color);
-    color: var(--color);
-    box-shadow: 0px 5px 5px -3px rgba(0, 0, 0, 0.2), 0px 8px 10px 1px rgba(0, 0, 0, 0.14), 0px 3px 14px 2px rgba(0, 0, 0, 0.12);
+    background-color: themes.themed(body-bg);
+    color: themes.themed(font-color);
+    box-shadow: #{style.$shadow-popup};
 
     &.rtl {
       direction: rtl;
@@ -187,11 +176,11 @@ body.dark .daracl-datetime-wrapper,
         height: 24px;
 
         > svg {
-          fill: var(--color);
+          fill: themes.themed(font-color);
         }
 
         &:hover {
-          background-color: var(--button-hover-color);
+          background-color: themes.themed(hover-bg);
         }
       }
 
@@ -216,19 +205,19 @@ body.dark .daracl-datetime-wrapper,
       margin-bottom: 7px;
       padding: 3px 0px;
       border-radius: 4px;
-      border-color: var(--border-color);
+      border-color: themes.themed(border-color);
       border-width: 1px;
       border-style: solid;
-      background-color: var(--background-color);
+      background-color: themes.themed(body-bg);
 
       &:hover {
-        background-color: var(--button-hover-color);
+        background-color: themes.themed(hover-bg);
       }
     }
 
     .ddtp-today {
       &:hover {
-        background-color: var(--button-hover-color);
+        background-color: themes.themed(hover-bg);
       }
     }
 
@@ -238,7 +227,7 @@ body.dark .daracl-datetime-wrapper,
       border-spacing: 0px;
       margin: 2px 10px;
       width: inherit;
-      background-color: var(--background-color);
+      background-color: themes.themed(body-bg);
 
       .ddtp-day-label {
         font-weight: bold;
@@ -255,7 +244,7 @@ body.dark .daracl-datetime-wrapper,
         cursor: pointer;
         line-height: initial;
         border-width: 0px !important;
-        background: var(--background-color);
+        background: themes.themed(body-bg);
 
         &.ddtp-event::after {
           content: "•";
@@ -276,7 +265,7 @@ body.dark .daracl-datetime-wrapper,
           display: block;
           width: 30px;
           height: 30px;
-          background-color: var(--select-background-color);
+          background-color: var(--ddtp-select-bg);
           border-radius: 50%;
           opacity: 0;
           z-index: 0;
@@ -296,7 +285,7 @@ body.dark .daracl-datetime-wrapper,
           }
 
           &:before {
-            background-color: var(--today-bg);
+            background-color: themes.themed(today-bg);
             z-index: 1;
             opacity: 1;
             transition: opacity 0.2s ease-out;
@@ -304,7 +293,7 @@ body.dark .daracl-datetime-wrapper,
         }
 
         &.select:before {
-          background-color: var(--select-background-color);
+          background-color: var(--ddtp-select-bg);
           opacity: 0.5;
           transition: opacity 0.2s ease-out;
         }
@@ -315,7 +304,7 @@ body.dark .daracl-datetime-wrapper,
         }
 
         &.disabled {
-          background-color: var(--disabled-background-color);
+          background-color: themes.themed(disabled-bg);
           opacity: 0.5;
           cursor: auto;
 
@@ -376,7 +365,7 @@ body.dark .daracl-datetime-wrapper,
           margin-right: 5px;
           padding-left: 0px;
           border-radius: 4px;
-          border-color: var(--border-color);
+          border-color: themes.themed(border-color);
           border-width: 1px;
           text-align: center;
         }
@@ -409,7 +398,7 @@ body.dark .daracl-datetime-wrapper,
           display: block;
           width: 50px;
           height: 50px;
-          background-color: var(--select-background-color);
+          background-color: var(--ddtp-select-bg);
           border-radius: 50%;
           opacity: 0;
           z-index: 0;
@@ -423,7 +412,7 @@ body.dark .daracl-datetime-wrapper,
         }
 
         &.disabled {
-          background-color: var(--disabled-background-color);
+          background-color: themes.themed(disabled-bg);
           opacity: 0.5;
           cursor: auto;
 
@@ -457,7 +446,7 @@ body.dark .daracl-datetime-wrapper,
         display: block;
         width: 50px;
         height: 50px;
-        background-color: var(--select-background-color);
+        background-color: var(--ddtp-select-bg);
         border-radius: 50%;
         opacity: 0;
         z-index: 0;
@@ -471,7 +460,7 @@ body.dark .daracl-datetime-wrapper,
       }
 
       &.disabled {
-        background-color: var(--disabled-background-color);
+        background-color: themes.themed(disabled-bg);
         opacity: 0.5;
         cursor: auto;
 
@@ -480,25 +469,5 @@ body.dark .daracl-datetime-wrapper,
         }
       }
     }
-  }
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes fadeOut {
-  from {
-    opacity: 1;
-  }
-
-  to {
-    opacity: 0;
   }
 }

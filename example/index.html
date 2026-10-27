@@ -5,6 +5,7 @@
   <meta charset="utf-8">
   <title>Date Time Picker - Darainfo</title>
   <link rel="stylesheet" href="../dist/daracl.datetimepicker.min.css">
+  <link rel="stylesheet" href="../node_modules/@daracl/ui-style/dist/theme-vars.css">
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
@@ -111,6 +112,9 @@
     classList.remove("light", "dark");
 
     classList.add(theme);
+
+    // ui-style 테마 전환은 data-daracl-theme 속성으로 한다.
+    document.documentElement.setAttribute("data-daracl-theme", theme);
 
     if (persist) {
       localStorage.setItem(THEME_KEY, theme);
