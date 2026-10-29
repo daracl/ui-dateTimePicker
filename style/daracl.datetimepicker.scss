@@ -238,6 +238,10 @@ $ddtp-themes: (
       }
 
       .ddtp-day {
+        > span {
+          position: relative;
+          z-index: 2;
+        }
         position: relative;
         text-align: center;
         padding: 7px;
@@ -257,6 +261,7 @@ $ddtp-themes: (
         }
 
         &:before {
+          pointer-events: none;
           content: "";
           position: absolute;
           top: 50%;

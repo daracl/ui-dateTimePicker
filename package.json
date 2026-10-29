@@ -1,12 +1,20 @@
 {
   "name": "@daracl/datetimepicker",
   "version": "0.0.14",
-  "sideEffects": false,
+  "sideEffects": [
+    "./style/*.scss",
+    "./style/*.css",
+    "./dist/*.css",
+    "./dist/*.js",
+    "./dist/*.cjs",
+    "./src/global.ts",
+    "./src/index.umd.ts"
+  ],
   "description": "Dacacl Datetime picker",
   "author": {
     "name": "darainfo",
     "email": "darainfosys@gmail.com",
-    "url": "https://www.moaview.com"
+    "url": "https://ui.daracl.com"
   },
   "license": "MIT",
   "keywords": [
@@ -18,7 +26,7 @@
     "daracl",
     "javascript"
   ],
- "main": "./dist/index.cjs",
+  "main": "./dist/index.cjs",
   "types": "./dist/index.d.ts",
   "module": "./dist/index.js",
   "homepage": "https://github.com/daracl/ui-dateTimePicker",
@@ -31,20 +39,20 @@
     "url": "https://github.com/daracl/ui-dateTimePicker.git"
   },
   "exports": {
-      ".": {
+    ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
-      },
-      "./umd": {
-      "import": "./dist/daracl.tree.umd.js"
-      },
-      "./dist/": "./dist/",
-      "./style/": "./style/"
+    },
+    "./umd": {
+      "import": "./dist/daracl.datetimepicker.umd.js"
+    },
+    "./dist/*": "./dist/*",
+    "./style/*": "./style/*"
   },
   "files": [
-      "dist",
-      "style"
+    "dist",
+    "style"
   ],
   "prettier": {
     "printWidth": 256,
@@ -58,53 +66,48 @@
   "[javascript]": {
     "editor.formatOnSave": false
   },
-  "peerDependencies": {
-      "@daracl/core": "^0.0.5"
-  },
   "dependencies": {
-    "@daracl/ui-style": "^0.0.6"
+    "@daracl/ui-style": "^0.0.8"
   },
   "devDependencies": {
-    "@daracl/core": "^0.0.5",
-    "@babel/core": "^7.21.4",
-    "@babel/preset-env": "^7.25.7",
-    "@babel/preset-typescript": "^7.21.4",
+    "@daracl/core": "^0.0.12",
     "@playwright/test": "^1.55.1",
     "@types/node": "^20.1.0",
-    "cpx": "^1.5.0",
-    "eslint": "^8.40.0",
-    "eslint-config-airbnb": "^19.0.4",
-    "eslint-config-prettier": "^8.8.0",
-    "eslint-plugin-import": "^2.27.5",
-    "eslint-plugin-prettier": "^4.2.1",
-    "eslint-plugin-react": "^7.32.2",
     "material-icons": "^1.13.8",
     "prettier": "^2.8.8",
-    "rimraf": "^6.0.1",
-    "rollup-plugin-postcss": "^4.0.2",
     "rollup-plugin-visualizer": "^6.0.3",
-    "sass": "^1.80.2",
+    "sass": "^1.106.1",
     "typedoc": "^0.28.13",
-    "typescript": "^5.1.6",
-    "vite": "^5.4.0",
-    "vite-plugin-banner": "^0.7.1"
+    "typescript": "5.6.3",
+    "vite": "~7.3.7"
   },
   "scripts": {
-    "prepack": "yarn build",
-    "build": "yarn build:escjs && yarn build:umd && yarn mergenclean",
-    "build:umd": "vite build --config vite.config.umd.js --mode production && vite build --config vite.config.umd.js --mode development",
-    "build:escjs": "vite build --config vite.config.js --mode production && vite build --config vite.config.js --mode development",
-    "mergenclean": "yarn copy-dts && yarn build:tsc && yarn copy-unmin && yarn clean:unmin && yarn copy-html",
+    "prepack": "npm run build",
+    "build": "node scripts/build.mjs",
+    "build:umd": "vite build --config vite.config.umd.mjs --mode production && vite build --config vite.config.umd.mjs --mode development",
+    "build:escjs": "vite build --config vite.config.mjs --mode production && vite build --config vite.config.mjs --mode development",
+    "mergenclean": "npm run copy-dts && npm run build:tsc && npm run copy-unmin && npm run clean:unmin && npm run copy-html",
     "build:tsc": "tsc --emitDeclarationOnly",
     "dev": "vite",
     "preview": "vite preview",
     "docs:gen": "typedoc --tsconfig tsconfig.doc.json",
-    "dts:gen": "tsc src/index.ts --declaration --emitDeclarationOnly --outDir dist",
-    "test": "jest",
+    "dts:gen": "npm run build:tsc",
+    "test": "npm run build && node --test tests/*.test.mjs && npm run test:types && npm run test:package",
     "pwtest": "playwright test",
-    "clean:unmin": "rimraf dist/unmin",
-    "copy-html": "cpx \"public/index.html\" dist",
-    "copy-unmin": "cpx \"dist/unmin/**.*\" dist",
-    "copy-dts": "cpx \"src/**/*.d.ts\" dist"
-  }
+    "clean:unmin": "node scripts/build-files.mjs clean-unmin",
+    "copy-html": "node scripts/build-files.mjs html",
+    "copy-unmin": "node scripts/build-files.mjs unmin",
+    "copy-dts": "node scripts/build-files.mjs dts",
+    "audit:security": "npm audit --omit=dev",
+    "audit:security:all": "npm audit",
+    "test:package": "node scripts/package-smoke.mjs",
+    "test:types": "tsc --noEmit --strict --module ESNext --moduleResolution Bundler --target ES2020 --lib ES2020,DOM tests/types.ts"
+  },
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
+  "peerDependencies": {
+    "@daracl/core": "^0.0.12"
+  },
+  "type": "module"
 }

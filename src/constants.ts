@@ -1,4 +1,4 @@
-export const EXPRESSIONS_FORMAT = ["YY", "YYYY", "MMMM", "MMM", "MM", "M", "dddd", "ddd", "dd", "d", "DD", "D", "S", "HH", "H", "hh", "h", "mm", "m", "ss", "s", "SSS", "zzzz", "zzz", "zz", "z", "a", "A"];
+export const EXPRESSIONS_FORMAT = ["YY", "YYYY", "MMMM", "MMM", "MM", "M", "dddd", "ddd", "dd", "d", "DD", "D", "HH", "H", "hh", "h", "mm", "m", "ss", "s", "SSS", "SS", "S", "a", "A"];
 
 export let MAX_CHAR_LENGTH = 0;
 

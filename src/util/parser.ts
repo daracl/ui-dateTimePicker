@@ -1,4 +1,4 @@
-import Lanauage from "@/Lanauage";
+import Lanauage, { Language } from "../Lanauage";
 import { DEFAULT_FORMAT, EXPRESSIONS_FORMAT, MAX_CHAR_LENGTH } from "@/constants";
 
 type DateInfo = {
@@ -15,8 +15,8 @@ type DateInfo = {
   charIdx: number;
 };
 
-export default (dateStr: string, format: string): Date | null => {
-  if (dateStr.length > 1000) {
+export default (dateStr: string, format: string = DEFAULT_FORMAT.date, language: Language = Lanauage): Date | null => {
+  if (typeof dateStr !== 'string' || !dateStr || dateStr.length > 1000 || typeof format !== 'string') {
     return null;
   }
 
@@ -37,6 +37,8 @@ export default (dateStr: string, format: string): Date | null => {
 
   const len = format.length;
   let startIdx = 0;
+  let has12Hour = false;
+  let weekDay: number | undefined;
 
   for (let i = 0; i < len; ) {
     let minLen = Math.min(MAX_CHAR_LENGTH, len - i);
@@ -45,20 +47,40 @@ export default (dateStr: string, format: string): Date | null => {
       const v = format.substring(i, i + j);
       if (EXPRESSIONS_FORMAT.includes(v)) {
         const expInfo = expressionsFunction[v];
-        const val = matchFind(dateStr.substring(startIdx), expInfo[0]);
+        const remaining = dateStr.substring(startIdx);
+        let val = matchFind(remaining, expInfo[0]);
+        if (['MMM', 'MMMM', 'ddd', 'dddd', 'a', 'A'].includes(v)) {
+          const names = v === 'MMM' || v === 'MMMM'
+            ? Array.from({ length: 12 }, (_, idx) => language.getMonthsMessage(idx, v === 'MMM' ? 'abbr' : 'full'))
+            : v === 'ddd' || v === 'dddd'
+              ? Array.from({ length: 7 }, (_, idx) => language.getWeeksMessage(idx, v === 'ddd' ? 'abbr' : 'full'))
+              : [language.getMessage('am'), language.getMessage('pm')];
+          val = names.filter(Boolean).sort((a, b) => b.length - a.length)
+            .find(name => remaining.toLowerCase().startsWith(name.toLowerCase())) || '';
+          if (v === 'ddd' || v === 'dddd') weekDay = names.indexOf(val);
+        }
+        if (!val) return null;
+        if (v === 'h' || v === 'hh') has12Hour = true;
         expInfo[1](dateInfo, val);
+        if (v === 'MMM' || v === 'MMMM') dateInfo.month = language.getMonthsIdx(val, v === 'MMM' ? 'abbr' : 'full');
+        if (v === 'a' || v === 'A') dateInfo.isPm = val.toLowerCase() === language.getMessage('pm').toLowerCase();
         startIdx += val.length;
         break;
       }
     }
 
     if (j < 1) {
+      if (dateStr[startIdx] !== format[i]) return null;
       i += 1;
       startIdx += 1;
     } else {
       i += j;
     }
   }
+  if (startIdx !== dateStr.length) return null;
+  if (dateInfo.month < 0 || dateInfo.month > 11 || dateInfo.day < 1 || dateInfo.day > 31 ||
+    dateInfo.minute > 59 || dateInfo.second > 59 ||
+    (has12Hour ? dateInfo.hour < 1 || dateInfo.hour > 12 : dateInfo.hour > 23)) return null;
 
   if (dateInfo.hour != null && !dateInfo.isH) {
     if (dateInfo.isPm && +dateInfo.hour !== 12) {
@@ -70,7 +92,13 @@ export default (dateStr: string, format: string): Date | null => {
 
   let date: Date;
 
-  date = new Date(dateInfo.year, dateInfo.month, dateInfo.day, dateInfo.hour, dateInfo.minute, dateInfo.second, dateInfo.millisecond);
+  // setFullYear는 0~99년을 1900년대로 보정하지 않습니다.
+  date = new Date(0);
+  date.setFullYear(dateInfo.year, dateInfo.month, dateInfo.day);
+  date.setHours(dateInfo.hour, dateInfo.minute, dateInfo.second, dateInfo.millisecond);
+  if (date.getFullYear() !== dateInfo.year || date.getMonth() !== dateInfo.month ||
+    date.getDate() !== dateInfo.day || date.getHours() !== dateInfo.hour ||
+    date.getMinutes() !== dateInfo.minute || (weekDay !== undefined && date.getDay() !== weekDay)) return null;
 
   return date;
 };
@@ -79,7 +107,7 @@ export default (dateStr: string, format: string): Date | null => {
 const matchFind = (val: string, regexp: RegExp) => {
   const match = regexp.exec(val);
 
-  return match == null ? "" : match[0];
+  return match == null || match.index !== 0 ? "" : match[0];
 };
 
 // number check regular expression
@@ -209,7 +237,7 @@ const expressionsFunction: Record<string, [RegExp, (dateInfo: DateInfo, val: str
   a: [
     word,
     (dateInfo: DateInfo, val: string) => {
-      if (Lanauage.getMessage("am") != val.toLowerCase()) {
+      if (Lanauage.getMessage("am").toLowerCase() != val.toLowerCase()) {
         dateInfo.isPm = true;
       }
       return dateInfo;
@@ -218,7 +246,7 @@ const expressionsFunction: Record<string, [RegExp, (dateInfo: DateInfo, val: str
   A: [
     word,
     (dateInfo: DateInfo, val: string) => {
-      if (Lanauage.getMessage("am") != val.toLowerCase()) {
+      if (Lanauage.getMessage("am").toLowerCase() != val.toLowerCase()) {
         dateInfo.isPm = true;
       }
       return dateInfo;
@@ -259,4 +287,6 @@ const expressionsFunction: Record<string, [RegExp, (dateInfo: DateInfo, val: str
       return dateInfo;
     },
   ],
+  SS: [/\d{2}/, (dateInfo, val) => { dateInfo.millisecond = +val * 10; return dateInfo; }],
+  S: [/\d/, (dateInfo, val) => { dateInfo.millisecond = +val * 100; return dateInfo; }],
 };

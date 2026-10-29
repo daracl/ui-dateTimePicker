@@ -1,9 +1,9 @@
-import { DateTimePickerOptions } from "@t/DateTimePickerOptions";
-import { Message } from "@t/Message";
+import { DateTimePickerOptions } from "./types/DateTimePickerOptions";
+import { MessageOptions } from "./types/Message";
 import format from "./format";
 import parser from "./util/parser";
-import Lanauage from "./Lanauage";
-import { closestElement } from "./util/utils";
+import Lanauage, { Language } from "./Lanauage";
+import { closestElement, escapeHtml } from "./util/utils";
 import { DaraDate } from "./DaraDate";
 import { DAY_STYLE_CLASS, DEFAULT_FORMAT, DateViewMode } from "./constants";
 import { isFunction, isNumeric, leftPad, leftPadClamp } from "@daracl/core";
@@ -55,6 +55,7 @@ export class DateTimePicker {
   public static parser = parser;
 
   private readonly options;
+  private readonly language: Language;
 
   private datetimeElement;
 
@@ -69,6 +70,9 @@ export class DateTimePicker {
   private isInput: boolean = false;
 
   private isVisible = false;
+  private destroyed = false;
+  private originalClassName = '';
+  private originalContent = '';
 
   private _viewMode: DateViewMode;
 
@@ -88,8 +92,8 @@ export class DateTimePicker {
   // 요일 순서.
   private dayOrder: number[] = [0, 1, 2, 3, 4, 5, 6];
 
-  constructor(selector: string | HTMLElement, options: DateTimePickerOptions, message: Message) {
-    this.options = Object.assign({}, DEFAULT_OPTIONS, options);
+  constructor(selector: string | HTMLElement, options: Partial<DateTimePickerOptions> = {}, message?: MessageOptions) {
+    this.options = Object.assign({}, DEFAULT_OPTIONS, Object.fromEntries(Object.entries(options).filter(([, value]) => value !== undefined)));
 
     daraDatetimeIdx += 1;
 
@@ -104,11 +108,11 @@ export class DateTimePicker {
       throw new Error(`${selector} datetimepicker element not found`);
     }
 
-    this._viewMode = Object.keys(DateViewMode).includes(this.options.mode) ? this.options.mode : DateViewMode.date;
+    this._viewMode = Object.keys(DateViewMode).includes(this.options.mode) ? this.options.mode as DateViewMode : DateViewMode.date;
 
     this.initMode = this._viewMode;
 
-    Lanauage.set(message);
+    this.language = new Language(message);
 
     if (this.initMode == DateViewMode.year) {
       this.dateFormat = this.options.format || DEFAULT_FORMAT.year;
@@ -125,30 +129,40 @@ export class DateTimePicker {
     let viewDate: DaraDate;
     if (this.options.initialDate) {
       if (typeof this.options.initialDate === "string") {
-        viewDate = new DaraDate(parser(this.options.initialDate, this.dateFormat) || new Date());
+        viewDate = new DaraDate(parser(this.options.initialDate, this.dateFormat, this.language) || new Date(), this.language);
       } else {
-        viewDate = new DaraDate(this.options.initialDate);
+        viewDate = new DaraDate(Number.isFinite(this.options.initialDate.getTime()) ? this.options.initialDate : new Date(), this.language);
       }
     } else {
-      viewDate = new DaraDate(new Date());
+      const entered = !this.options.inline && 'value' in selectorElement
+        ? parser((selectorElement as HTMLInputElement).value, this.dateFormat, this.language) : null;
+      viewDate = new DaraDate(entered || new Date(), this.language);
       this.options.initialDate = viewDate.format(this.dateFormat);
     }
 
     this.setWeekDays();
 
-    this.todayDate = viewDate.format(DEFAULT_FORMAT.date);
+    this.todayDate = format(new Date(), 'YYYY-MM-DD');
     this.currentDate = viewDate;
     this.targetElement = selectorElement;
 
     this.minDate = this._minDate();
     this.maxDate = this._maxDate();
+    if (this.minDate > this.maxDate) {
+      throw new RangeError('minDate must not be after maxDate');
+    }
+    if (this.currentDate.getTime() < this.minDate) this.currentDate = new DaraDate(new Date(this.minDate), this.language);
+    if (this.currentDate.getTime() > this.maxDate) this.currentDate = new DaraDate(new Date(this.maxDate), this.language);
 
     if (this.options.inline) {
+      this.originalClassName = selectorElement.className;
+      this.originalContent = selectorElement.innerHTML;
       this.datetimeElement = selectorElement;
-      this.datetimeElement.className = `daracl-datetime-wrapper ddtp-${daraDatetimeIdx} embed`;
+      this.datetimeElement.classList.add('daracl-datetime-wrapper', `ddtp-${daraDatetimeIdx}`, 'embed');
     } else {
       this.isInput = true;
-      this.targetElement.setAttribute("value", viewDate.format(this.dateFormat));
+      (this.targetElement as HTMLInputElement).defaultValue = this.currentDate.format(this.dateFormat);
+      (this.targetElement as HTMLInputElement).value = this.currentDate.format(this.dateFormat);
 
       const datetimeElement = document.createElement("div");
       datetimeElement.className = `daracl-datetime-wrapper ddtp-${daraDatetimeIdx} layer`;
@@ -177,13 +191,14 @@ export class DateTimePicker {
     this.initDateEvent();
 
     this.initTimeEvent();
+    this.options.onLoad?.(this);
   }
   setWeekDays() {
     let weekStartDay = this.options.weekStartDay;
 
     if (weekStartDay == 0) return;
 
-    if (weekStartDay < 0 || weekStartDay > 6) {
+    if (!Number.isInteger(weekStartDay) || weekStartDay < 0 || weekStartDay > 6) {
       weekStartDay = 0;
     }
 
@@ -194,7 +209,7 @@ export class DateTimePicker {
     }
   }
 
-  public static create(selector: string | HTMLElement, options: DateTimePickerOptions, message: Message): DateTimePicker {
+  public static create(selector: string | HTMLElement, options: Partial<DateTimePickerOptions> = {}, message?: MessageOptions): DateTimePicker {
     return new DateTimePicker(selector, options, message);
   }
 
@@ -223,18 +238,18 @@ export class DateTimePicker {
 
     if (minDate != "") {
       if (typeof minDate === "string") {
-        const dt = parser(minDate, this.dateFormat);
-        if (!dt) {
-          return -1;
-        }
+        const dt = parser(minDate, this.dateFormat, this.language);
+        if (!dt) throw new RangeError('Invalid minDate');
 
         minDate = dt;
       }
+      if (!(minDate instanceof Date) || !Number.isFinite(minDate.getTime())) throw new RangeError('Invalid minDate');
       this.minYear = minDate.getFullYear();
-      this.minMonth = +(this.minYear + leftPad(minDate.getMonth(), 2));
-      return new Date(minDate.getFullYear(), minDate.getMonth(), minDate.getDate(), 0, 0).getTime();
+      this.minMonth = this.minYear * 12 + minDate.getMonth();
+      const boundary = new Date(minDate.getTime());
+      return boundary.setHours(0, 0, 0, 0);
     }
-    return -1;
+    return Number.NEGATIVE_INFINITY;
   }
 
   private _maxDate() {
@@ -242,18 +257,18 @@ export class DateTimePicker {
 
     if (maxDate != "") {
       if (typeof maxDate === "string") {
-        const dt = parser(maxDate, this.dateFormat);
-        if (!dt) {
-          return -1;
-        }
+        const dt = parser(maxDate, this.dateFormat, this.language);
+        if (!dt) throw new RangeError('Invalid maxDate');
 
         maxDate = dt;
       }
+      if (!(maxDate instanceof Date) || !Number.isFinite(maxDate.getTime())) throw new RangeError('Invalid maxDate');
       this.maxYear = maxDate.getFullYear();
-      this.maxMonth = +(this.maxYear + leftPad(maxDate.getMonth(), 2));
-      return new Date(maxDate.getFullYear(), maxDate.getMonth(), maxDate.getDate(), 23, 59).getTime();
+      this.maxMonth = this.maxYear * 12 + maxDate.getMonth();
+      const boundary = new Date(maxDate.getTime());
+      return boundary.setHours(23, 59, 59, 999);
     }
-    return -1;
+    return Number.POSITIVE_INFINITY;
   }
 
   public set viewMode(mode: DateViewMode) {
@@ -275,6 +290,9 @@ export class DateTimePicker {
    * @param mode
    */
   public changeViewMode(mode: DateViewMode) {
+    if (this.destroyed) return;
+    if (!Object.values(DateViewMode).includes(mode)) return;
+    this._viewMode = mode;
     this.datetimeElement.querySelector(".ddtp-datetime")?.setAttribute("view-mode", mode);
 
     if (mode === "year") {
@@ -315,19 +333,21 @@ export class DateTimePicker {
    */
   private initDateEvent() {
     this.datetimeElement.querySelector(".ddtp-day-body")?.addEventListener("click", (e: Event) => {
-      const targetEle = e.target as Element;
+      const targetEle = (e.target as Element).closest('.ddtp-day');
 
-      if (targetEle.classList.contains("ddtp-day") || targetEle.closest(".ddtp-day")) {
+      if (targetEle) {
         const selectDate = targetEle.getAttribute("data-day") || "1";
 
         const mmDD = selectDate.split(",");
 
-        this.currentDate.setMonth(+mmDD[0] - 1);
-        this.currentDate.setDate(+mmDD[1]);
-
-        if (this.isDayDisabled(this.currentDate)) {
+        const candidate = this.currentDate.clone().setDate(1)
+          .setYear(Number(targetEle.getAttribute('data-year')))
+          .setMonth(+mmDD[0] - 1).setDate(+mmDD[1]);
+        if (this.isDayDisabled(candidate) || targetEle.classList.contains('disabled')) {
           return;
         }
+        const previous = this.currentDate;
+        this.currentDate = candidate;
 
         this.datetimeElement.querySelector(".select")?.classList.remove("select");
 
@@ -338,22 +358,27 @@ export class DateTimePicker {
           this.currentDate.setMinutes(+this.minuteInputEle.value);
         }
 
-        this.dateChangeEvent(e);
+        if (this.dateChangeEvent(e) === false) this.currentDate = previous;
+        this.dayDraw(false);
       }
     });
 
     // today click
     this.datetimeElement.querySelector(".ddtp-today")?.addEventListener("click", (e: Event) => {
-      const initDate = new DaraDate(parser(this.todayDate, DEFAULT_FORMAT.date) || new Date());
+      const initDate = new DaraDate(new Date());
+      if (this.isDayDisabled(initDate)) return;
+      const previous = this.currentDate.clone();
+      this.currentDate.setDate(1);
       this.currentDate.setYear(initDate.getYear());
       this.currentDate.setMonth(initDate.getMonth() - 1);
       this.currentDate.setDate(initDate.getDate());
       this.changeViewMode(this.initMode);
+      if (!this.isTimeMode() && this.dateChangeEvent(e) === false) this.currentDate = previous;
     });
   }
 
   private isTimeMode(): boolean {
-    return this._viewMode === DateViewMode.time || this._viewMode === DateViewMode.datetime;
+    return this.initMode === DateViewMode.time || this.initMode === DateViewMode.datetime;
   }
 
   private getTimeNumberValue(val:string){
@@ -361,7 +386,7 @@ export class DateTimePicker {
       return 0;
     }
 
-    return parseInt(val,10);
+    return Math.max(0, parseInt(val,10) || 0);
   }
 
   /**
@@ -386,7 +411,7 @@ export class DateTimePicker {
 
       let val = this.getTimeNumberValue(targetElement.value);
 
-      let addVal = leftPadClamp(val,2,'0');
+      let addVal = leftPad(Math.min(val, 23), 2);
       
       if(parseInt(addVal,10)>23){
         addVal = 23+'';
@@ -411,7 +436,7 @@ export class DateTimePicker {
     minuteInputEle.addEventListener("input", (e: Event) => {
       const targetElement = e.target as HTMLInputElement;
       let val = this.getTimeNumberValue(targetElement.value);
-      let addVal = leftPadClamp(val,2,'0');
+      let addVal = leftPad(Math.min(val, 59), 2);
 
       if(parseInt(addVal,10)>59){
         addVal = 59+'';
@@ -427,9 +452,10 @@ export class DateTimePicker {
     });
 
     datetimeElement.querySelector(".time-select")?.addEventListener("click", (e: Event) => {
+      const previous = this.currentDate.clone();
       this.currentDate.setHour(+hourInputEle.value);
       this.currentDate.setMinutes(+minuteInputEle.value);
-      this.dateChangeEvent(e);
+      if (this.dateChangeEvent(e) === false) this.currentDate = previous;
     });
   }
 
@@ -474,8 +500,8 @@ export class DateTimePicker {
    * @static
    * @param {DateTimePickerOptions} options
    */
-  static setOptions(options: DateTimePickerOptions) {
-    DEFAULT_OPTIONS = Object.assign({}, DEFAULT_OPTIONS, options);
+  static setOptions(options: Partial<DateTimePickerOptions>) {
+    DEFAULT_OPTIONS = Object.assign({}, DEFAULT_OPTIONS, Object.fromEntries(Object.entries(options).filter(([, value]) => value !== undefined)));
   }
 
   /**
@@ -484,15 +510,36 @@ export class DateTimePicker {
    * @returns
    */
   private show() {
-    if (this.isVisible) {
+    if (this.destroyed || this.isVisible) {
       return;
+    }
+    const entered = parser((this.targetElement as HTMLInputElement).value, this.dateFormat, this.language);
+    if (entered && !this.isDayDisabled(new DaraDate(entered))) {
+      this.currentDate = new DaraDate(entered, this.language);
+      this.refresh();
+      if (this.isTimeMode()) {
+        for (const [selector, token] of [['.ddtp-hour', 'HH'], ['.ddtp-hour-range', 'HH'], ['.ddtp-minute', 'mm'], ['.ddtp-minute-range', 'mm']]) {
+          (this.datetimeElement.querySelector(selector) as HTMLInputElement).value = this.currentDate.format(token);
+        }
+      }
     }
     this.isVisible = true;
 
-    const docSize = getDocSize();
     this.datetimeElement.classList.remove("hide");
 
     this.datetimeElement.classList.add("show");
+
+    this.updatePosition();
+    window.addEventListener('resize', this.updatePosition);
+    window.addEventListener('scroll', this.updatePosition, true);
+    document.addEventListener("click", this._documentClickEvent);
+    document.addEventListener('keydown', this._documentKeyEvent);
+  }
+
+  // 레이아웃이 바뀔 때 입력 요소의 현재 좌표를 기준으로 다시 배치합니다.
+  private updatePosition = () => {
+    if (!this.isVisible || this.destroyed || this.options.inline) return;
+    const docSize = getDocSize();
 
     const rect = this.targetElement.getBoundingClientRect();
 
@@ -515,29 +562,57 @@ export class DateTimePicker {
         top = scrollTop + rect.top + targetElementHeight;
       }
     }
+    const minLeft = this.options.isPositionFixed ? 0 : scrollLeft;
+    left = Math.max(minLeft, Math.min(left, minLeft + docSize.clientWidth - this.datetimeElement.offsetWidth));
 
     this.datetimeElement.setAttribute("style", `${this.options.isPositionFixed ? "position:fixed;" : ""}top:${top}px;left:${left}px;z-index:${this.options.zIndex}`);
 
-    document.addEventListener("click", this._documentClickEvent);
-  }
+  };
 
   /**
    * 달력 숨기기
    */
   private hide() {
-    this.isVisible = false;
-
+    if (!this.isVisible) return;
     if (this.options.onClose) {
       if (this.options.onClose() === false) {
         return;
       }
     }
+    this.isVisible = false;
 
     this.datetimeElement.classList.remove("show");
 
     this.datetimeElement.classList.add("hide");
 
     document.removeEventListener("click", this._documentClickEvent);
+    document.removeEventListener('keydown', this._documentKeyEvent);
+    window.removeEventListener('resize', this.updatePosition);
+    window.removeEventListener('scroll', this.updatePosition, true);
+  }
+
+  private _documentKeyEvent = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') this.hide();
+  };
+
+  private _targetClickEvent = () => { this.show(); };
+
+  /** DOM과 전역 이벤트를 정리합니다. 여러 번 호출해도 안전합니다. */
+  public destroy() {
+    if (this.destroyed) return;
+    document.removeEventListener('click', this._documentClickEvent);
+    document.removeEventListener('keydown', this._documentKeyEvent);
+    window.removeEventListener('resize', this.updatePosition);
+    window.removeEventListener('scroll', this.updatePosition, true);
+    this.targetElement.removeEventListener('click', this._targetClickEvent);
+    if (this.options.inline) {
+      this.targetElement.className = this.originalClassName;
+      this.targetElement.innerHTML = this.originalContent;
+    } else {
+      this.datetimeElement.remove();
+    }
+    this.isVisible = false;
+    this.destroyed = true;
   }
 
   /**
@@ -556,9 +631,7 @@ export class DateTimePicker {
    */
   private initTargetEvent() {
     if (this.targetElement) {
-      this.targetElement.addEventListener("click", (e: Event) => {
-        this.show();
-      });
+      this.targetElement.addEventListener("click", this._targetClickEvent);
     }
   }
 
@@ -581,7 +654,10 @@ export class DateTimePicker {
     const formatValue = this.currentDate.format(this.dateFormat);
 
     if (this.options.beforeChangeDatepicker && isFunction(this.options.beforeChangeDatepicker)) {
+      let completed = false;
       const reval = this.options.beforeChangeDatepicker(formatValue, (result: boolean) => {
+        if (completed || this.destroyed) return;
+        completed = true;
         if (result === false) {
           return;
         }
@@ -589,10 +665,11 @@ export class DateTimePicker {
         this.refresh(false);
       });
 
-      if (reval === false) {
+      if (reval === false || completed) {
         return;
       }
 
+      completed = true;
       this.refresh(false);
       return;
     }
@@ -601,21 +678,26 @@ export class DateTimePicker {
   }
 
   private dateChangeEvent(e: Event) {
+    const disabled = this.initMode === DateViewMode.year ? this.isYearDisabled(this.currentDate.getYear())
+      : this.initMode === DateViewMode.month ? this.isMonthDisabled(this.currentDate.getYear(), this.currentDate.getMonth() - 1)
+        : this.isDayDisabled(this.currentDate);
+    if (this.destroyed || disabled) return false;
     const formatValue = this.currentDate.format(this.dateFormat);
 
     if (this.options.onSelect) {
       if (this.options.onSelect(formatValue, this.viewMode, e) === false) {
-        return;
+        return false;
       }
     }
 
     if (this.isInput) {
-      this.targetElement.setAttribute("value", formatValue);
+      (this.targetElement as HTMLInputElement).value = formatValue;
     }
 
     if (!this.options.inline && this.options.autoClose) {
       this.hide();
     }
+    return true;
   }
 
   /**
@@ -642,24 +724,24 @@ export class DateTimePicker {
                 <table class="ddtp-days">
                     <thead class="ddtp-day-header">
                         <tr>		
-                            <td class="ddtp-day-label ${DAY_STYLE_CLASS[this.dayOrder[0]]}">${Lanauage.getWeeksMessage(this.dayOrder[0])}</td>		
-                            <td class="ddtp-day-label ${DAY_STYLE_CLASS[this.dayOrder[1]]}">${Lanauage.getWeeksMessage(this.dayOrder[1])}</td>		
-                            <td class="ddtp-day-label ${DAY_STYLE_CLASS[this.dayOrder[2]]}">${Lanauage.getWeeksMessage(this.dayOrder[2])}</td>		
-                            <td class="ddtp-day-label ${DAY_STYLE_CLASS[this.dayOrder[3]]}">${Lanauage.getWeeksMessage(this.dayOrder[3])}</td>		
-                            <td class="ddtp-day-label ${DAY_STYLE_CLASS[this.dayOrder[4]]}">${Lanauage.getWeeksMessage(this.dayOrder[4])}</td>		
-                            <td class="ddtp-day-label ${DAY_STYLE_CLASS[this.dayOrder[5]]}">${Lanauage.getWeeksMessage(this.dayOrder[5])}</td>		
-                            <td class="ddtp-day-label ${DAY_STYLE_CLASS[this.dayOrder[6]]}">${Lanauage.getWeeksMessage(this.dayOrder[6])}</td>		
+                            <td class="ddtp-day-label ${DAY_STYLE_CLASS[this.dayOrder[0]]}">${escapeHtml(this.language.getWeeksMessage(this.dayOrder[0]))}</td>
+                            <td class="ddtp-day-label ${DAY_STYLE_CLASS[this.dayOrder[1]]}">${escapeHtml(this.language.getWeeksMessage(this.dayOrder[1]))}</td>
+                            <td class="ddtp-day-label ${DAY_STYLE_CLASS[this.dayOrder[2]]}">${escapeHtml(this.language.getWeeksMessage(this.dayOrder[2]))}</td>
+                            <td class="ddtp-day-label ${DAY_STYLE_CLASS[this.dayOrder[3]]}">${escapeHtml(this.language.getWeeksMessage(this.dayOrder[3]))}</td>
+                            <td class="ddtp-day-label ${DAY_STYLE_CLASS[this.dayOrder[4]]}">${escapeHtml(this.language.getWeeksMessage(this.dayOrder[4]))}</td>
+                            <td class="ddtp-day-label ${DAY_STYLE_CLASS[this.dayOrder[5]]}">${escapeHtml(this.language.getWeeksMessage(this.dayOrder[5]))}</td>
+                            <td class="ddtp-day-label ${DAY_STYLE_CLASS[this.dayOrder[6]]}">${escapeHtml(this.language.getWeeksMessage(this.dayOrder[6]))}</td>
                         </tr>
                     </thead>
                     <tbody class="ddtp-day-body">
                     </tbody>
                     
-                    <tfoot class="ddtp-day-footer">
+                    <tfoot class="ddtp-day-footer"><tr>
                         <td colspan="7">
-                            <div style="width:99%;text-align:center;margin-top: 5px;${this.options.enableTodayBtn ? "" : "display:none;"}"><button type="button" class="ddtp-today">${Lanauage.getMessage("today")}</button></div>
+                            <div style="width:99%;text-align:center;margin-top: 5px;${this.options.enableTodayBtn ? "" : "display:none;"}"><button type="button" class="ddtp-today">${escapeHtml(this.language.getMessage("today"))}</button></div>
                             <div class="footer-tooltip"></div>
                         </td>
-                    </tfoot>
+                    </tr></tfoot>
                 </table>
 
                 <div class="ddtp-times">
@@ -674,7 +756,7 @@ export class DateTimePicker {
                             </div>
                         </div>
                         <div class="ddtp-btn">
-                            <button type="button" class="time-select">${Lanauage.getMessage("ok")}</button>
+                            <button type="button" class="time-select">${escapeHtml(this.language.getMessage("ok"))}</button>
                         </div>
                 </div>
 
@@ -690,6 +772,7 @@ export class DateTimePicker {
   }
 
   public refresh(beforeChangeDatepickerCheck?: boolean) {
+    if (this.destroyed) return;
     if (this._viewMode === DateViewMode.date || this._viewMode === DateViewMode.datetime) {
       this.dayDraw(beforeChangeDatepickerCheck);
       return;
@@ -734,9 +817,9 @@ export class DateTimePicker {
       let tooltip = "";
       if (beforeDrawDateFlag && beforeDrawDateFn) {
         const reval = beforeDrawDateFn({ mode: this._viewMode, date: year });
-        addStylceClass += reval.style ? " " + reval.style : "";
-        tooltip = reval.tooltip;
-        tooltip = tooltip ? `title="${tooltip}"` : "";
+        addStylceClass += reval?.style ? " " + escapeHtml(reval.style) : "";
+        tooltip = reval?.tooltip;
+        tooltip = tooltip ? `title="${escapeHtml(tooltip)}"` : "";
       }
 
       calHTML.push(`<div class="ddtp-year ${addStylceClass}" data-year="${year}" ${tooltip}>${year}</div>`);
@@ -765,8 +848,9 @@ export class DateTimePicker {
               if (this.isYearDisabled(numYear)) {
                 return;
               }
+              const previous = this.currentDate.clone();
               this.currentDate.setYear(numYear);
-              this.dateChangeEvent(e);
+              if (this.dateChangeEvent(e) === false) this.currentDate = previous;
               return;
             }
 
@@ -790,35 +874,6 @@ export class DateTimePicker {
     const year = this.currentDate.format("YYYY");
     (this.datetimeElement.querySelector(".ddtp-header-year") as Element).textContent = `${year}`;
 
-    const monthElements = this.datetimeElement.querySelectorAll(".ddtp-months > .ddtp-month");
-
-    if (monthElements.length > 0) {
-      if (this.isYearDisabled(+year)) {
-        monthElements.forEach((monthEle) => {
-          if (!monthEle.classList.contains("disabled")) {
-            monthEle.classList.add("disabled");
-          }
-        });
-        return;
-      }
-
-      monthElements.forEach((monthEle, idx) => {
-        if (this.isMonthDisabled(+year, idx)) {
-          if (!monthEle.classList.contains("disabled")) {
-            monthEle.classList.add("disabled");
-          }
-        } else {
-          monthEle.classList.remove("disabled");
-        }
-      });
-
-      if (this.initMode == DateViewMode.month) {
-        this.afterChangeDatepicker();
-      }
-
-      return;
-    }
-
     (this.datetimeElement.querySelector(".ddtp-header-month") as Element).textContent = this.currentDate.format("MMMM");
 
     const beforeDrawDateFlag = isFunction(this.options.beforeDrawDate);
@@ -832,12 +887,12 @@ export class DateTimePicker {
       let tooltip = "";
       if (beforeDrawDateFlag && beforeDrawDateFn) {
         const reval = beforeDrawDateFn({ mode: this._viewMode, date: year + "/" + (i + 1) });
-        addStylceClass += reval.style ? " " + reval.style : "";
-        tooltip = reval.tooltip;
-        tooltip = tooltip ? `title="${tooltip}"` : "";
+        addStylceClass += reval?.style ? " " + escapeHtml(reval.style) : "";
+        tooltip = reval?.tooltip;
+        tooltip = tooltip ? `title="${escapeHtml(tooltip)}"` : "";
       }
 
-      calHTML.push(`<div class="ddtp-month ${addStylceClass}" data-month="${i}" ${tooltip}>${Lanauage.getMonthsMessage(i, "abbr")}</div>`);
+      calHTML.push(`<div class="ddtp-month ${addStylceClass}" data-month="${i}" ${tooltip}>${escapeHtml(this.language.getMonthsMessage(i, "abbr"))}</div>`);
     }
     (this.datetimeElement.querySelector(".ddtp-months") as Element).innerHTML = calHTML.join("");
 
@@ -858,8 +913,9 @@ export class DateTimePicker {
             }
 
             if (this.initMode == DateViewMode.month) {
+              const previous = this.currentDate.clone();
               this.currentDate.setMonth(+month);
-              this.dateChangeEvent(e);
+              if (this.dateChangeEvent(e) === false) this.currentDate = previous;
               return;
             }
             this.currentDate.setMonth(+month);
@@ -875,6 +931,7 @@ export class DateTimePicker {
    * 날짜 그리기
    */
   private dayDraw(beforeChangeDatepickerCheck?: boolean) {
+    this.todayDate = format(new Date(), 'YYYY-MM-DD');
     if (beforeChangeDatepickerCheck !== false && (this.initMode == DateViewMode.date || this.initMode == DateViewMode.datetime)) {
       this.beforeChangeDatepicker();
       return;
@@ -909,7 +966,7 @@ export class DateTimePicker {
         dateItem = monthFirstDate.clone().addDate(i);
       }
 
-      const dateItemFormat = dateItem.format(DEFAULT_FORMAT.date);
+      const dateItemFormat = dateItem.format('YYYY-MM-DD');
 
       if (i % 7 == 0) {
         calHTML.push((i == 0 ? "" : "</tr>") + "<tr>");
@@ -929,19 +986,20 @@ export class DateTimePicker {
       }
 
       addStylceClass += this.todayDate == dateItemFormat ? " ddtp-today" : "";
+      addStylceClass += this.currentDate.format('YYYY-MM-DD') === dateItemFormat ? ' select' : '';
       addStylceClass += disabled ? " disabled" : "";
 
       let tooltip = "";
       if (beforeDrawDateFlag && beforeDrawDateFn) {
         const reval = beforeDrawDateFn({ mode: this._viewMode, item: dateItem, date: dateItem.format(this.dateFormat) });
-        addStylceClass += reval.style ? " " + reval.style : "";
+        addStylceClass += reval?.style ? " " + escapeHtml(reval.style) : "";
 
-        addStylceClass += reval.check ? " ddtp-event" : "";
-        tooltip = reval.tooltip;
-        tooltip = tooltip ? `title="${tooltip}"` : "";
+        addStylceClass += reval?.check ? " ddtp-event" : "";
+        tooltip = reval?.tooltip;
+        tooltip = tooltip ? `title="${escapeHtml(tooltip)}"` : "";
       }
 
-      calHTML.push(`<td class="ddtp-day ${addStylceClass}" data-day="${dateItem.format("M,D")}" ${tooltip}>`);
+      calHTML.push(`<td class="ddtp-day ${addStylceClass}" data-year="${dateItem.getYear()}" data-day="${dateItem.format("M,D")}" ${tooltip}>`);
       calHTML.push(`<span>${dateItem.format("d")}</span>`);
       calHTML.push("</td>");
     }
@@ -956,7 +1014,7 @@ export class DateTimePicker {
   }
 
   private isDayDisabled(dateItem: DaraDate) {
-    if ((this.minDate != -1 && this.minDate > dateItem.getTime()) || (this.maxDate != -1 && this.maxDate < dateItem.getTime())) {
+    if (this.minDate > dateItem.getTime() || this.maxDate < dateItem.getTime()) {
       return true;
     }
 
@@ -976,7 +1034,7 @@ export class DateTimePicker {
       return true;
     }
 
-    let yearMonth = +(year + leftPad(month, 2));
+    let yearMonth = year * 12 + month;
 
     if ((this.minMonth != -1 && this.minMonth > yearMonth) || (this.maxMonth != -1 && this.maxMonth < yearMonth)) {
       return true;
@@ -985,7 +1043,7 @@ export class DateTimePicker {
     return false;
   }
 
-  public static setMessage(message: Message) {
+  public static setMessage(message: MessageOptions) {
     Lanauage.setDefaultMessage(message);
   }
 }

@@ -1,205 +1,53 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <title>Date Time Picker - Darainfo</title>
-
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="stylesheet" href="./daracl.datetimepicker.min.css" />
-    <link rel="stylesheet" href="../node_modules/@daracl/ui-style/dist/theme-vars.css" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <script type="text/javascript" src="./daracl.datetimepicker.min.umd.js"></script>
-  </head>
-
-  <body onload="load()" class="dark">
-    <div style="padding: 10px">
-      <h2>Date Time Picker</h2>
-      <hr />
-
-      <div>
-        Theme : <label>Light<input type="radio" name="theme-toggle" value="light" checked="true" /></label>
-        <label>Dark<input type="radio" name="theme-toggle" value="dark" /></label>
+<html lang="ko" data-daracl-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
+  <title>Daracl · Date & Time Playground</title>
+  <link rel="stylesheet" href="./daracl.datetimepicker.min.css" />
+  <link rel="stylesheet" href="./theme-vars.css" />
+  <link rel="stylesheet" href="./demo.css" />
+  <script defer src="./daracl.datetimepicker.min.umd.js"></script>
+  <script defer src="./demo.js"></script>
+</head>
+<body>
+  <div class="page-shell">
+    <header class="topbar">
+      <a class="brand" href="#"><span class="brand-mark" aria-hidden="true">d<span>·</span></span>daracl<span class="brand-divider">/</span><span class="brand-product">datetimepicker</span></a>
+      <div class="header-actions"><span class="demo-label"><span></span> Interactive demo</span><button class="theme-toggle" id="themeToggle" type="button" aria-label="다크 모드로 전환" aria-pressed="false">◐ <span>Dark mode</span></button></div>
+    </header>
+    <main>
+      <section class="hero" aria-labelledby="page-title">
+        <div class="eyebrow"><span class="tiny-line"></span> THE LITTLE DETAILS, BEAUTIFULLY TIMED</div>
+        <h1 id="page-title">좋은 순간의 시작,<br /><span>날짜를 고르는 일부터.</span></h1>
+        <p>날짜 하나부터 정확한 시간까지.<br class="mobile-break" /> 가볍고 유연한 Daracl 날짜 선택기를 만나보세요.</p>
+        <div class="hero-tags"><span>Vanilla JavaScript</span><span>5 picker modes</span><span>Light & Dark</span></div>
+        <div class="hero-art" aria-hidden="true"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="art-calendar"><div class="art-rings"><i></i><i></i></div><div class="art-month">MAKE TIME FOR</div><div class="art-date">오늘<span>의 좋은 순간</span></div><div class="art-dots"><i></i><i></i><i class="active"></i><i></i><i></i></div></div><span class="art-note">A little more present.</span></div>
+      </section>
+      <div class="section-heading"><div><span class="section-index">01 — PLAYGROUND</span><h2>직접 골라보세요</h2></div><span class="section-hint">입력창을 누르면 선택기가 열려요 <span aria-hidden="true">↙</span></span></div>
+      <div class="playground">
+        <section class="card input-card" aria-labelledby="inputs-title">
+          <div class="card-heading"><div class="card-icon" aria-hidden="true">▦</div><div><h3 id="inputs-title">모든 순간에 맞는 입력</h3><p>필요한 단위로, 익숙한 형식으로.</p></div><span class="pill">5 MODES</span></div>
+          <div class="fields">
+            <div class="field"><label for="dateText">날짜 <span>DATE</span></label><div class="input-wrap"><input id="dateText" type="text" autocomplete="off" placeholder="날짜를 선택하세요" /><span aria-hidden="true">▦</span></div><small>하루를 선택하는 가장 간단한 방법</small></div>
+            <div class="field"><label for="datetimeText">날짜와 시간 <span>DATE & TIME</span></label><div class="input-wrap"><input id="datetimeText" type="text" autocomplete="off" placeholder="언제 만날까요?" /><span aria-hidden="true">◷</span></div><small>약속과 일정을 분 단위까지 정확하게</small></div>
+            <div class="field"><label for="timeText">시간 <span>TIME</span></label><div class="input-wrap"><input id="timeText" type="text" autocomplete="off" placeholder="시간 선택" /><span aria-hidden="true">◷</span></div></div>
+            <div class="field"><label for="monthText">월 <span>MONTH</span></label><div class="input-wrap"><input id="monthText" type="text" autocomplete="off" placeholder="월 선택" /><span aria-hidden="true">▦</span></div></div>
+            <div class="field"><label for="yearText">연도 <span>YEAR</span></label><div class="input-wrap"><input id="yearText" type="text" autocomplete="off" placeholder="연도 선택" /><span aria-hidden="true">↗</span></div></div>
+          </div>
+          <div class="card-foot"><span class="status-dot"></span> 오늘을 기준으로 시작해요. 원하는 날짜로 자유롭게 바꿔보세요.</div>
+        </section>
+        <section class="card calendar-card" aria-labelledby="calendar-title"><div class="card-heading"><div class="card-icon" aria-hidden="true">◴</div><div><h3 id="calendar-title">한눈에 보는 나의 일정</h3><p>페이지 안에 자연스럽게, 인라인 캘린더.</p></div></div><div class="calendar-stage"><div id="inlineCalendar"></div></div><div class="selection-summary"><span>선택한 날짜와 시간</span><output id="inlineValue" aria-live="polite">—</output><span class="summary-check" aria-hidden="true">✓</span></div></section>
       </div>
-
-      <ul class="view" style="width: 100%">
-        <li>
-          <h2>Date</h2>
-          <input type="text" id="dateText" />
-
-          <h2>Date Time</h2>
-          <input type="text" id="datetimeText" />
-
-          <h2>Time</h2>
-          <input type="text" id="timeText" />
-
-          <h2>Month</h2>
-          <input type="text" id="monthText" />
-
-          <h2>Year</h2>
-          <input type="text" id="yearText" />
-        </li>
-        <li>
-          <h2>embed</h2>
-          <div id="date"></div>
-        </li>
-      </ul>
-    </div>
-
-    <div style="height: 800px; width: 800px; background-color: aqua; position: fixed; top: 200px; left: 500px; z-index: 10000">fixed position : <input type="text" id="datetimeText1" /></div>
-
-    <div style="height: 800px; width: 1800px"></div>
-  </body>
+      <section class="result-strip" aria-label="최근 선택 결과"><div class="result-icon" aria-hidden="true">↳</div><div><span class="section-index">YOUR LAST PICK</span><p id="lastPick" role="status">날짜를 선택하면 여기에 표시됩니다.</p></div><span class="live-badge"><i></i> LIVE</span></section>
+      <section class="detail-grid" aria-label="추가 예제와 사용법"><div class="fixed-demo"><span class="section-index">02 — FIXED POSITION</span><h3>스크롤해도, 정확한 위치에.</h3><p>고정 좌표 팝업으로 다양한 레이아웃에 대응합니다.</p><div class="input-wrap"><label class="sr-only" for="fixedText">고정 위치 날짜와 시간</label><input id="fixedText" type="text" autocomplete="off" placeholder="고정 위치 선택기 체험하기" /><span aria-hidden="true">↗</span></div></div><div class="code-demo"><div class="code-heading"><span>작은 코드, 자연스러운 경험.</span><span>JavaScript</span></div><pre><code><span class="code-muted">// 원하는 요소에 연결하면 준비 끝</span>
+<span class="code-green">Daracl.dateTimePicker</span>.create(<span class="code-yellow">'#date'</span>, {
+  mode: <span class="code-yellow">'datetime'</span>,
+  initialDate: <span class="code-green">new Date</span>()
+});</code></pre></div></section>
+    </main>
+    <footer><span><strong>daracl</strong> · 시간을 다루는 더 편안한 방법.</span><a href="https://github.com/daracl/ui-dateTimePicker" target="_blank" rel="noopener noreferrer">View on GitHub ↗</a></footer>
+  </div>
+</body>
 </html>
-
-<style>
-  .view {
-    width: 100%;
-    list-style: none;
-    padding: 0px;
-    margin: 0px;
-  }
-
-  .view > li {
-    list-style: none;
-    width: 49%;
-    float: left;
-  }
-
-  h2 {
-    padding: 0px;
-    margin: 0px;
-    margin-top: 10px;
-  }
-</style>
-
-<script>
-  const THEME_KEY = "date-theme";
-  const theme = localStorage.getItem(THEME_KEY);
-
-  if (theme) setMainTheme(theme);
-
-  function setMainTheme(theme, persist = false) {
-    const classList = document.body.classList;
-
-    classList.remove("light", "dark");
-
-    classList.add(theme);
-
-    // ui-style 테마 전환은 data-daracl-theme 속성으로 한다.
-    document.documentElement.setAttribute("data-daracl-theme", theme);
-
-    if (persist) {
-      localStorage.setItem(THEME_KEY, theme);
-    }
-  }
-
-  function load() {
-    // theme
-    const toggler = document.querySelectorAll('[name="theme-toggle"]');
-    const theme = localStorage.getItem(THEME_KEY);
-
-    if (toggler) {
-      if (theme === "dark") {
-        document.querySelector('[name="theme-toggle"][value="dark"]').checked = true;
-      }
-
-      toggler.forEach((el) => {
-        el.addEventListener("click", (e) => {
-          setMainTheme(el.value, true);
-        });
-      });
-    }
-
-    // 언어 설정
-    Daracl.dateTimePicker.setDefaultFormat({
-      date: "YYYY.MM.DD",
-      datetime: "YYYY.MM.DD HH:mm",
-    });
-
-    Daracl.dateTimePicker.create(
-      "#dateText",
-      {
-        //initialDate: '2023-08-10' // 초기화 요일
-        aaa: 11,
-        mode: "date",
-        minDate: Daracl.dateTimePicker.parser("2023.08.05"),
-        maxDate: Daracl.dateTimePicker.parser("2050.09.30"),
-
-        onSelect: (dt) => {
-          console.log(dt);
-          //return false;
-        },
-        onClose: (dt) => {
-          console.log(dt);
-          //return false;
-        },
-
-        zIndex: 1000,
-      },
-      {
-        ok: "Ok",
-      }
-    );
-
-    Daracl.dateTimePicker.create("#datetimeText", { initialDate: new Date(), mode: "datetime" });
-
-    Daracl.dateTimePicker.create("#timeText", { initialDate: new Date(), mode: "time" });
-
-    Daracl.dateTimePicker.create("#monthText", {
-      initialDate: new Date(),
-      format: "YYYY-MM-DD",
-      mode: "month",
-      afterChangeDatepicker: (dt, mode) => {
-        console.log("monthText afterChangeDatepicker", dt, mode);
-      },
-    });
-
-    Daracl.dateTimePicker.create("#yearText", {
-      initialDate: new Date(),
-      format: "YYYY",
-      mode: "year",
-      afterChangeDatepicker: (dt, mode) => {
-        console.log("yearText afterChangeDatepicker", dt, mode);
-      },
-    });
-
-    Daracl.dateTimePicker.create("#datetimeText1", { zIndex: 50000, isPositionFixed: true });
-
-    var aaa = Daracl.dateTimePicker.create("#date", {
-      inline: true,
-      showMonthAfterYear: true,
-      mode: "datetime",
-      //, weekStartDay: 1
-      minDate: Daracl.dateTimePicker.parser("2023-08-05"),
-      maxDate: Daracl.dateTimePicker.parser("2025-09-30"),
-      //, isRTL: true
-      initialDate: new Date(), // 초기화 요일
-      onSelect: (dt, mode, e) => {
-        console.log("select", dt, mode, e);
-      },
-      beforeChangeDatepicker: (dt, callbackFn) => {
-        console.log("beforeChangeDatepicker", dt);
-
-        setTimeout(function () {
-          callbackFn(true);
-        }, 10);
-
-        return false;
-      },
-      afterChangeDatepicker: (dt, mode) => {
-        console.log("afterChangeDatepicker", dt, mode);
-      },
-      beforeDrawDate: (dt) => {
-        //return false;
-        return {
-          style: "111",
-          //check: true,
-          //, tooltip: dt.date
-        };
-      },
-      zIndex: 1000,
-    });
-
-    window.aaa = aaa;
-  }
-</script>

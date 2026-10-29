@@ -4,8 +4,7 @@
 
 /dist
 
-# ignore code scanning from package-lock
-package-lock.json
+# Commit the lockfile for reproducible installs and dependency security review.
 
 dist.zip
 .yarn/*

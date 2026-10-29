@@ -1,8 +1,9 @@
-import Lanauage from "@/Lanauage";
+import Lanauage, { Language } from "../Lanauage";
 import { MAX_CHAR_LENGTH, EXPRESSIONS_FORMAT } from "@/constants";
 import { leftPad } from "@daracl/core";
 
-export default (date: Date, format: string) => {
+export default (date: Date, format: string = "YYYY-MM-DD", language: Language = Lanauage) => {
+  if (!(date instanceof Date) || !Number.isFinite(date.getTime())) return "";
   format = format || "YYYY-MM-DD";
   const len = format.length;
 
@@ -13,11 +14,7 @@ export default (date: Date, format: string) => {
     for (; j > 0; j--) {
       const v = format.substring(i, i + j);
       if (EXPRESSIONS_FORMAT.includes(v)) {
-        try {
-          result.push(expressionsFunction[v](date));
-        } catch (e) {
-          console.log(EXPRESSIONS_FORMAT.includes(v), v, e);
-        }
+        result.push(expressionsFunction[v](date, language));
         break;
       }
     }
@@ -33,12 +30,12 @@ export default (date: Date, format: string) => {
   return result.join("");
 };
 
-const expressionsFunction: any = {
+const expressionsFunction: Record<string, (date: Date, language: Language) => string> = {
   YY: (date: Date) => {
     return String(date.getFullYear()).slice(-2);
   },
   YYYY: (date: Date) => {
-    return String(date.getFullYear());
+    return leftPad(date.getFullYear(), 4);
   },
   M: (date: Date) => {
     return String(date.getMonth() + 1);
@@ -46,11 +43,11 @@ const expressionsFunction: any = {
   MM: (date: Date) => {
     return leftPad(date.getMonth() + 1, 2);
   },
-  MMM: (date: Date) => {
-    return Lanauage.getMonthsMessage(date.getMonth());
+  MMM: (date: Date, language: Language) => {
+    return language.getMonthsMessage(date.getMonth());
   },
-  MMMM: (date: Date) => {
-    return Lanauage.getMonthsMessage(date.getMonth(), "full");
+  MMMM: (date: Date, language: Language) => {
+    return language.getMonthsMessage(date.getMonth(), "full");
   },
   D: (date: Date) => {
     return String(date.getDate());
@@ -64,11 +61,11 @@ const expressionsFunction: any = {
   dd: (date: Date) => {
     return leftPad(date.getDate(), 2);
   },
-  ddd: (date: Date) => {
-    return Lanauage.getWeeksMessage(date.getDay());
+  ddd: (date: Date, language: Language) => {
+    return language.getWeeksMessage(date.getDay());
   },
-  dddd: (date: Date) => {
-    return Lanauage.getWeeksMessage(date.getDay(), "full");
+  dddd: (date: Date, language: Language) => {
+    return language.getWeeksMessage(date.getDay(), "full");
   },
   H: (date: Date) => {
     return String(date.getHours());
@@ -77,16 +74,16 @@ const expressionsFunction: any = {
     return leftPad(date.getHours(), 2);
   },
   h: (date: Date) => {
-    return getH(date);
+    return String(getH(date));
   },
   hh: (date: Date) => {
     return leftPad(getH(date), 2);
   },
-  a: (date: Date) => {
-    return String(date.getFullYear()).slice(-2);
+  a: (date: Date, language: Language) => {
+    return getMeridiem(date, false, language).toLowerCase();
   },
-  A: (date: Date) => {
-    return getMeridiem(date, true, true);
+  A: (date: Date, language: Language) => {
+    return getMeridiem(date, true, language);
   },
   m: (date: Date) => {
     return String(date.getMinutes());
@@ -103,6 +100,8 @@ const expressionsFunction: any = {
   SSS: (date: Date) => {
     return leftPad(date.getMilliseconds(), 3);
   },
+  S: (date: Date) => String(Math.floor(date.getMilliseconds() / 100)),
+  SS: (date: Date) => leftPad(Math.floor(date.getMilliseconds() / 10), 2),
 };
 
 function getH(date: Date) {
@@ -115,11 +114,11 @@ function getH(date: Date) {
   return hour;
 }
 
-function getMeridiem(date: Date, isUpper: boolean, isShort: boolean) {
+function getMeridiem(date: Date, isUpper: boolean, language: Language) {
   const hour = date.getHours();
   let m = hour < 12 ? "am" : "pm";
 
-  m = Lanauage.getMessage(m);
+  m = language.getMessage(m);
   m = isUpper ? m.toUpperCase() : m;
 
   return m;

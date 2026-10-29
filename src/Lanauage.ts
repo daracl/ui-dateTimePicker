@@ -1,4 +1,4 @@
-import { Message } from "@t/Message";
+import { Message, MessageOptions } from "./types/Message";
 
 let localeMessage: Message = {
   year: "Year",
@@ -24,11 +24,16 @@ let localeMessage: Message = {
  * @class Language
  * @typedef {Language}
  */
-class Language {
+export class Language {
   private lang: Message = localeMessage;
 
-  public setDefaultMessage(lang?: Message) {
-    localeMessage = Object.assign(localeMessage, lang);
+  constructor(lang?: MessageOptions) {
+    this.set(lang);
+  }
+
+  public setDefaultMessage(lang?: MessageOptions) {
+    localeMessage = this.merge(localeMessage, lang);
+    this.set();
   }
 
   /**
@@ -37,8 +42,18 @@ class Language {
    * @public
    * @param {?Message} [lang] 둥록할 메시지
    */
-  public set(lang?: Message) {
-    this.lang = Object.assign({}, localeMessage, lang);
+  public set(lang?: MessageOptions) {
+    this.lang = this.merge(localeMessage, lang);
+  }
+
+  private merge(base: Message, lang?: MessageOptions): Message {
+    const defined = (value: object = {}) => Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined));
+    const months = { ...base.months, ...defined(lang?.months) };
+    const weeks = { ...base.weeks, ...defined(lang?.weeks) };
+    return { ...base, ...defined(lang),
+      months: { full: [...months.full], abbr: [...months.abbr] },
+      weeks: { full: [...weeks.full], abbr: [...weeks.abbr] },
+    };
   }
 
   /**

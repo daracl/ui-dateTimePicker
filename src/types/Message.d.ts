@@ -16,3 +16,8 @@ export interface Message {
     }
 }
 
+export type MessageOptions = Partial<Omit<Message, 'months' | 'weeks'>> & {
+    months?: Partial<Message['months']>;
+    weeks?: Partial<Message['weeks']>;
+};
+

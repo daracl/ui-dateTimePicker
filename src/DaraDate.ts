@@ -1,31 +1,42 @@
 import dateFormat from './format';
+import defaultLanguage, { Language } from './Lanauage';
 
 export class DaraDate {
 
     private date;
 
-    constructor(dt: Date) {
-        this.date = dt;
+    constructor(dt: Date, private language: Language = defaultLanguage) {
+        this.date = new Date(dt.getTime());
     }
 
     public setYear(num: number) {
+        const day = this.date.getDate();
+        this.date.setDate(1);
         this.date.setFullYear(num);
+        this.date.setDate(Math.min(day, this.daysInMonth()));
         return this;
     }
 
     public addYear(num: number) {
-        this.date.setFullYear(this.date.getFullYear() + num);
-        return this;
+        return this.setYear(this.date.getFullYear() + num);
     }
 
     public addMonth(num: number) {
-        this.date.setMonth(this.date.getMonth() + num);
-        return this;
+        return this.setMonth(this.date.getMonth() + num);
     }
 
     public setMonth(num: number) {
+        const day = this.date.getDate();
+        this.date.setDate(1);
         this.date.setMonth(num);
+        this.date.setDate(Math.min(day, this.daysInMonth()));
         return this;
+    }
+
+    private daysInMonth() {
+        const end = new Date(this.date.getTime());
+        end.setMonth(end.getMonth() + 1, 0);
+        return end.getDate();
     }
 
     public setDate(num: number) {
@@ -104,11 +115,11 @@ export class DaraDate {
     }
 
     public format(format: string): string {
-        return dateFormat(this.date, format);
+        return dateFormat(this.date, format, this.language);
     }
 
     public clone() {
-        return new DaraDate(new Date(this.date.valueOf()));
+        return new DaraDate(new Date(this.date.valueOf()), this.language);
     }
 
 }
