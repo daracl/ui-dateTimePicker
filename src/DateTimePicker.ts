@@ -4,6 +4,7 @@ import format from "./format";
 import parser from "./util/parser";
 import Lanauage, { Language } from "./Lanauage";
 import { closestElement, escapeHtml } from "./util/utils";
+import { registerPopup, unregisterPopup, PopupClient } from './util/popupEvents';
 import { DaraDate } from "./DaraDate";
 import { DAY_STYLE_CLASS, DEFAULT_FORMAT, DateViewMode } from "./constants";
 import { isFunction, isNumeric, leftPad, leftPadClamp } from "@daracl/core";
@@ -73,6 +74,11 @@ export class DateTimePicker {
   private destroyed = false;
   private originalClassName = '';
   private originalContent = '';
+  private readonly popupClient: PopupClient = {
+    measurePosition: () => this.measurePosition(),
+    click: event => this._documentClickEvent(event),
+    keydown: event => this._documentKeyEvent(event),
+  };
 
   private _viewMode: DateViewMode;
 
@@ -529,15 +535,12 @@ export class DateTimePicker {
 
     this.datetimeElement.classList.add("show");
 
-    this.updatePosition();
-    window.addEventListener('resize', this.updatePosition);
-    window.addEventListener('scroll', this.updatePosition, true);
-    document.addEventListener("click", this._documentClickEvent);
-    document.addEventListener('keydown', this._documentKeyEvent);
+    this.measurePosition()?.();
+    registerPopup(this.popupClient);
   }
 
   // 레이아웃이 바뀔 때 입력 요소의 현재 좌표를 기준으로 다시 배치합니다.
-  private updatePosition = () => {
+  private measurePosition() {
     if (!this.isVisible || this.destroyed || this.options.inline) return;
     const docSize = getDocSize();
 
@@ -565,9 +568,12 @@ export class DateTimePicker {
     const minLeft = this.options.isPositionFixed ? 0 : scrollLeft;
     left = Math.max(minLeft, Math.min(left, minLeft + docSize.clientWidth - this.datetimeElement.offsetWidth));
 
-    this.datetimeElement.setAttribute("style", `${this.options.isPositionFixed ? "position:fixed;" : ""}top:${top}px;left:${left}px;z-index:${this.options.zIndex}`);
-
-  };
+    const css = `${this.options.isPositionFixed ? "position:fixed;" : ""}top:${top}px;left:${left}px;z-index:${this.options.zIndex}`;
+    return () => {
+      if (!this.isVisible || this.destroyed) return;
+      if (this.datetimeElement.getAttribute('style') !== css) this.datetimeElement.setAttribute('style', css);
+    };
+  }
 
   /**
    * 달력 숨기기
@@ -585,10 +591,7 @@ export class DateTimePicker {
 
     this.datetimeElement.classList.add("hide");
 
-    document.removeEventListener("click", this._documentClickEvent);
-    document.removeEventListener('keydown', this._documentKeyEvent);
-    window.removeEventListener('resize', this.updatePosition);
-    window.removeEventListener('scroll', this.updatePosition, true);
+    unregisterPopup(this.popupClient);
   }
 
   private _documentKeyEvent = (e: KeyboardEvent) => {
@@ -600,10 +603,7 @@ export class DateTimePicker {
   /** DOM과 전역 이벤트를 정리합니다. 여러 번 호출해도 안전합니다. */
   public destroy() {
     if (this.destroyed) return;
-    document.removeEventListener('click', this._documentClickEvent);
-    document.removeEventListener('keydown', this._documentKeyEvent);
-    window.removeEventListener('resize', this.updatePosition);
-    window.removeEventListener('scroll', this.updatePosition, true);
+    unregisterPopup(this.popupClient);
     this.targetElement.removeEventListener('click', this._targetClickEvent);
     if (this.options.inline) {
       this.targetElement.className = this.originalClassName;

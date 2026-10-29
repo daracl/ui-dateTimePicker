@@ -17,6 +17,82 @@ beforeEach(async () => {
 });
 afterEach(async () => { await page.close(); assert.deepEqual(errors, []); });
 
+test('global popup listeners are shared, frame updates are batched, and final close cancels work', async () => {
+  const result = await page.evaluate(() => {
+    const counts = { resize: 0, scroll: 0, click: 0, keydown: 0 };
+    for (const [target, types] of [[window, ['resize', 'scroll']], [document, ['click', 'keydown']]]) {
+      const add = target.addEventListener.bind(target);
+      const remove = target.removeEventListener.bind(target);
+      target.addEventListener = (type, listener, options) => {
+        if (types.includes(type)) counts[type]++;
+        return add(type, listener, options);
+      };
+      target.removeEventListener = (type, listener, options) => {
+        if (types.includes(type)) counts[type]--;
+        return remove(type, listener, options);
+      };
+    }
+    let nextFrame = 0;
+    const frames = new Map();
+    window.requestAnimationFrame = callback => { frames.set(++nextFrame, callback); return nextFrame; };
+    window.cancelAnimationFrame = id => frames.delete(id);
+    let allowClose = false;
+    const inputs = Array.from({ length: 20 }, () => {
+      const input = document.createElement('input');
+      document.body.append(input);
+      return input;
+    });
+    const pickers = inputs.map(input => Daracl.dateTimePicker.create(input, { onClose: () => allowClose }));
+    const closedCounts = { ...counts };
+    inputs[0].click(); inputs[1].click();
+    const openCounts = { ...counts };
+    const log = [];
+    inputs.slice(0, 2).forEach((input, index) => {
+      const read = input.getBoundingClientRect.bind(input);
+      input.getBoundingClientRect = () => { log.push(`read${index}`); return read(); };
+      input.style.marginLeft = '20px';
+    });
+    const layers = Array.from(document.querySelectorAll('.layer.show'));
+    layers.forEach((layer, index) => {
+      const write = layer.setAttribute.bind(layer);
+      layer.setAttribute = (name, value) => { if (name === 'style') log.push(`write${index}`); write(name, value); };
+    });
+    for (let index = 0; index < 30; index++) {
+      window.dispatchEvent(new Event('resize'));
+      document.dispatchEvent(new Event('scroll'));
+    }
+    const scheduled = frames.size;
+    const work = Array.from(frames.values()); frames.clear(); work.forEach(callback => callback(0));
+    const firstFrame = [...log]; log.length = 0;
+    window.dispatchEvent(new Event('resize'));
+    const unchanged = Array.from(frames.values()); frames.clear(); unchanged.forEach(callback => callback(1));
+    const unchangedFrame = [...log];
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    const vetoed = document.querySelectorAll('.layer.show').length;
+    allowClose = true;
+    window.dispatchEvent(new Event('resize'));
+    document.body.click();
+    const afterClose = { counts: { ...counts }, pending: frames.size, open: document.querySelectorAll('.layer.show').length };
+    inputs[0].click();
+    const reopenedCounts = { ...counts };
+    window.dispatchEvent(new Event('resize'));
+    pickers.forEach(picker => picker.destroy());
+    return { closedCounts, openCounts, scheduled, firstFrame, unchangedFrame, vetoed, afterClose, reopenedCounts,
+      afterDestroy: { counts: { ...counts }, pending: frames.size } };
+  });
+  const none = { resize: 0, scroll: 0, click: 0, keydown: 0 };
+  const shared = { resize: 1, scroll: 1, click: 1, keydown: 1 };
+  assert.deepEqual(result.closedCounts, none);
+  assert.deepEqual(result.openCounts, shared);
+  assert.equal(result.scheduled, 1);
+  assert.deepEqual(result.firstFrame, ['read0', 'read1', 'write0', 'write1']);
+  assert.deepEqual(result.unchangedFrame, ['read0', 'read1']);
+  assert.equal(result.vetoed, 2);
+  assert.deepEqual(result.afterClose, { counts: none, pending: 0, open: 0 });
+  assert.deepEqual(result.reopenedCounts, shared);
+  assert.deepEqual(result.afterDestroy, { counts: none, pending: 0 });
+});
+
 for (const fixed of [false, true]) {
   test(`open ${fixed ? 'fixed' : 'absolute'} popup follows input on viewport resize and scroll`, async () => {
     await page.setViewportSize({ width: 800, height: 800 });
