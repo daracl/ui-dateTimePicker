@@ -62,7 +62,7 @@
       "@daracl/core": "^0.0.5"
   },
   "dependencies": {
-    "@daracl/ui-style": "^0.0.1"
+    "@daracl/ui-style": "^0.0.6"
   },
   "devDependencies": {
     "@daracl/core": "^0.0.5",
