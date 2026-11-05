@@ -47,16 +47,15 @@ test('global popup listeners are shared, frame updates are batched, and final cl
     inputs[0].click(); inputs[1].click();
     const openCounts = { ...counts };
     const log = [];
+    let observers = [], writesBeforeSecondRead = -1;
     inputs.slice(0, 2).forEach((input, index) => {
       const read = input.getBoundingClientRect.bind(input);
-      input.getBoundingClientRect = () => { log.push(`read${index}`); return read(); };
+      input.getBoundingClientRect = () => { log.push(`read${index}`); if (index === 1 && observers[0]) writesBeforeSecondRead = observers[0].takeRecords().length; return read(); };
       input.style.marginLeft = '20px';
     });
     const layers = Array.from(document.querySelectorAll('.layer.show'));
-    layers.forEach((layer, index) => {
-      const write = layer.setAttribute.bind(layer);
-      layer.setAttribute = (name, value) => { if (name === 'style') log.push(`write${index}`); write(name, value); };
-    });
+    // 위치는 CSP 호환을 위해 style 속성 문자열이 아니라 CSSOM(style.*)으로 쓴다. 쓰기는 style 속성 변경으로 관찰한다.
+    observers = layers.map(layer => { const observer = new MutationObserver(() => {}); observer.observe(layer, { attributes: true, attributeFilter: ['style'] }); return observer; });
     for (let index = 0; index < 30; index++) {
       window.dispatchEvent(new Event('resize'));
       document.dispatchEvent(new Event('scroll'));
@@ -64,9 +63,11 @@ test('global popup listeners are shared, frame updates are batched, and final cl
     const scheduled = frames.size;
     const work = Array.from(frames.values()); frames.clear(); work.forEach(callback => callback(0));
     const firstFrame = [...log]; log.length = 0;
+    const firstWrites = observers.map(observer => observer.takeRecords().length);
     window.dispatchEvent(new Event('resize'));
     const unchanged = Array.from(frames.values()); frames.clear(); unchanged.forEach(callback => callback(1));
     const unchangedFrame = [...log];
+    const unchangedWrites = observers.map(observer => observer.takeRecords().length);
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
     const vetoed = document.querySelectorAll('.layer.show').length;
     allowClose = true;
@@ -77,7 +78,7 @@ test('global popup listeners are shared, frame updates are batched, and final cl
     const reopenedCounts = { ...counts };
     window.dispatchEvent(new Event('resize'));
     pickers.forEach(picker => picker.destroy());
-    return { closedCounts, openCounts, scheduled, firstFrame, unchangedFrame, vetoed, afterClose, reopenedCounts,
+    return { closedCounts, openCounts, scheduled, firstFrame, firstWrites, writesBeforeSecondRead, unchangedFrame, unchangedWrites, vetoed, afterClose, reopenedCounts,
       afterDestroy: { counts: { ...counts }, pending: frames.size } };
   });
   const none = { resize: 0, scroll: 0, click: 0, keydown: 0 };
@@ -85,8 +86,11 @@ test('global popup listeners are shared, frame updates are batched, and final cl
   assert.deepEqual(result.closedCounts, none);
   assert.deepEqual(result.openCounts, shared);
   assert.equal(result.scheduled, 1);
-  assert.deepEqual(result.firstFrame, ['read0', 'read1', 'write0', 'write1']);
+  assert.deepEqual(result.firstFrame, ['read0', 'read1']);
+  assert.equal(result.writesBeforeSecondRead, 0); // 모든 레이아웃 읽기를 끝낸 뒤에 쓴다.
+  assert.ok(result.firstWrites.every(count => count > 0), result.firstWrites.join());
   assert.deepEqual(result.unchangedFrame, ['read0', 'read1']);
+  assert.deepEqual(result.unchangedWrites, [0, 0]); // 위치가 같으면 다시 쓰지 않는다.
   assert.equal(result.vetoed, 2);
   assert.deepEqual(result.afterClose, { counts: none, pending: 0, open: 0 });
   assert.deepEqual(result.reopenedCounts, shared);
@@ -257,4 +261,94 @@ test('autoClose false keeps the popup open after a date click redraws the calend
   assert.equal(await page.locator('#input').inputValue(), '2026-11-12');
   await page.locator('#other').evaluate(el => el.click());
   assert.equal(await page.locator('.daracl-datetime-wrapper.show').count(), 0);
+});
+
+test('popup stays inside the content area when a vertical scrollbar narrows the viewport', async () => {
+  // 헤드리스 기본값은 스크롤바를 숨기므로, 스크롤바가 있는 전용 브라우저로 실제 조건을 만든다.
+  const scrolled = await chromium.launch({ headless: true, ignoreDefaultArgs: ['--hide-scrollbars'] });
+  try {
+    const view = await scrolled.newPage({ viewport: { width: 375, height: 500 } });
+    await view.setContent('<style>body{margin:0}#input{position:absolute;top:20px;right:0;width:120px}</style><input id="input"><div style="height:2000px"></div>');
+    await view.addStyleTag({ path: fileURLToPath(new URL('../dist/daracl.datetimepicker.min.css', import.meta.url)) });
+    await view.addScriptTag({ path: fileURLToPath(new URL('../dist/daracl.datetimepicker.min.umd.js', import.meta.url)) });
+    await view.evaluate(() => { document.documentElement.style.overflowY = 'scroll'; Daracl.dateTimePicker.create('#input', { mode: 'datetime' }); });
+    await view.locator('#input').click();
+    const result = await view.evaluate(() => {
+      const root = document.documentElement, popup = document.querySelector('.daracl-datetime-wrapper.show').getBoundingClientRect();
+      return { scrollbar: window.innerWidth - root.clientWidth, overflow: root.scrollWidth > root.clientWidth, right: popup.right, client: root.clientWidth };
+    });
+    assert.ok(result.scrollbar > 0, 'scrollbar must be present for this test to be meaningful');
+    assert.equal(result.overflow, false);
+    assert.ok(result.right <= result.client - 8, `popup right ${result.right} must keep 8px from content width ${result.client}`);
+  } finally { await scrolled.close(); }
+});
+
+test('zIndex cannot inject CSS, positioning avoids the style attribute API and navigation links avoid javascript: URLs', async () => {
+  await page.evaluate(() => {
+    window.attrWrites = [];
+    const set = Element.prototype.setAttribute;
+    Element.prototype.setAttribute = function (name, value) { if (String(name).toLowerCase() === 'style') attrWrites.push(String(value)); return set.call(this, name, value); };
+    window.picker = Daracl.dateTimePicker.create('#input', { zIndex: '1;background:url(//evil.example/x.png)' });
+    window.second = Daracl.dateTimePicker.create('#other', { zIndex: 'not-a-number', isPositionFixed: true });
+  });
+  await page.locator('#input').click();
+  const result = await page.evaluate(() => {
+    const layer = document.querySelector('.daracl-datetime-wrapper.layer.show');
+    return { zIndex: layer.style.zIndex, background: getComputedStyle(layer).backgroundImage, left: layer.style.left, top: layer.style.top,
+      hrefs: Array.from(document.querySelectorAll('.daracl-datetime-wrapper a')).map(a => a.getAttribute('href')), attrWrites, other: document.querySelectorAll('.daracl-datetime-wrapper.layer')[1].style.zIndex };
+  });
+  assert.equal(result.zIndex, '1000'); // 숫자가 아닌 값은 기본값으로 대체된다.
+  assert.equal(result.background, 'none');
+  assert.deepEqual(result.attrWrites, []);
+  assert.ok(result.left.endsWith('px') && result.top.endsWith('px'));
+  assert.ok(result.hrefs.length > 0 && result.hrefs.every(href => !String(href).startsWith('javascript:')), result.hrefs.join());
+  assert.equal(result.other, '1000');
+  // 이전/다음 링크는 페이지 이동 없이 달력만 바꾼다.
+  const before = page.url();
+  await page.locator('.daracl-datetime-wrapper.show .ddtp-move-btn.next').click();
+  assert.equal(page.url(), before);
+});
+
+test('creating again on the same element destroys the earlier instance and keeps only the later one', async () => {
+  const result = await page.evaluate(() => {
+    const out = {};
+    // 인라인: 이전 인스턴스를 정리하고 나중 것만 남으며, 해제하면 최초 내용으로 복원된다.
+    window.first = Daracl.dateTimePicker.create('#calendar', { inline: true, initialDate: '2026-11-05' });
+    window.second = Daracl.dateTimePicker.create('#calendar', { inline: true, initialDate: '2026-12-25' });
+    out.inlineCalendars = document.querySelectorAll('#calendar .ddtp-datetime').length;
+    out.inlineValue = second.getDateValue();
+    second.destroy();
+    out.restored = [document.querySelector('#calendar').innerHTML, document.querySelector('#calendar').className];
+    // 레이어: 팝업 요소가 하나만 남는다.
+    window.layerA = Daracl.dateTimePicker.create('#input', {});
+    window.layerB = Daracl.dateTimePicker.create('#input', {});
+    out.layers = document.querySelectorAll('.daracl-datetime-wrapper.layer').length;
+    // 이전 인스턴스는 이미 해제되었으므로 다시 destroy 해도 나중 인스턴스에 영향이 없다.
+    layerA.destroy();
+    out.layersAfterOldDestroy = document.querySelectorAll('.daracl-datetime-wrapper.layer').length;
+    // 새 인스턴스의 생성이 실패하면 기존 인스턴스는 유지된다.
+    try { Daracl.dateTimePicker.create('#input', { minDate: '2026-12-31', maxDate: '2026-01-01' }); out.threw = false; } catch { out.threw = true; }
+    out.layersAfterFailure = document.querySelectorAll('.daracl-datetime-wrapper.layer').length;
+    return out;
+  });
+  assert.equal(result.inlineCalendars, 1);
+  assert.equal(result.inlineValue, '2026-12-25');
+  assert.deepEqual(result.restored, ['<b>original</b>', 'original']);
+  assert.equal(result.layers, 1);
+  assert.equal(result.layersAfterOldDestroy, 1);
+  assert.equal(result.threw, true);
+  assert.equal(result.layersAfterFailure, 1);
+  await page.locator('#input').click();
+  assert.equal(await page.locator('.daracl-datetime-wrapper.show').count(), 1);
+});
+
+test('calling initTimeEvent again does not bind the time handlers twice', async () => {
+  const calls = await page.evaluate(() => {
+    let selected = 0;
+    const picker = Daracl.dateTimePicker.create('#calendar', { inline: true, mode: 'datetime', initialDate: '2026-11-05 10:00', format: 'YYYY-MM-DD HH:mm', onSelect: () => { selected++; } });
+    picker.initTimeEvent(); picker.initTimeEvent();
+    document.querySelector('#calendar .time-select').click();
+    return selected;
+  });
+  assert.equal(calls, 1);
 });

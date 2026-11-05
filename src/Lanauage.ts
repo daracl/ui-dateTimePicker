@@ -15,6 +15,10 @@ let localeMessage: Message = {
   rangeEnd: "End",
   selectRangeStart: "Select start date",
   selectRangeEnd: "Select end date",
+  rangeMin: "Select at least {days} days.",
+  rangeMax: "You can select up to {days} days.",
+  rangeDisabled: "The range includes dates that cannot be selected.",
+  rangeTimeOrder: "The end time must be later than the start time.",
   months: {
     full: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
     abbr: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],

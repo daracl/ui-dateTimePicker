@@ -16,9 +16,9 @@ beforeEach(async () => {
   await page.addScriptTag({ path: fileURLToPath(new URL('../dist/daracl.datetimepicker.min.umd.js', import.meta.url)) });
 });
 afterEach(async () => { await page.close(); assert.deepEqual(errors, []); });
-const create = async (options = {}) => page.evaluate(options => {
-  window.picker = Daracl.dateTimePicker.create('#calendar', { inline: true, initialDate: '2026-11-05', selectionMode: 'range', ...options });
-}, options);
+const create = async (options = {}, message) => page.evaluate(([options, message]) => {
+  window.picker = Daracl.dateTimePicker.create('#calendar', { inline: true, initialDate: '2026-11-05', selectionMode: 'range', ...options }, message);
+}, [options, message]);
 const day = (month, date, root = '#calendar') => page.locator(`${root} .ddtp-day[data-day="${month},${date}"]`).first();
 const state = () => page.evaluate(() => {
   const s = picker.getRangeState();
@@ -57,6 +57,38 @@ for (const allowReverse of [false, true]) test(`reverse selection ${allowReverse
   await day(11, 12).click(); await day(11, 5).click();
   assert.equal((await state()).complete, allowReverse);
   if (allowReverse) assert.equal((await state()).days, 8);
+});
+test('selecting a date before the start swaps by default and keeps each endpoint time group', async () => {
+  const events = [];
+  await create({ autoClose: false, confirmButton: true, mode: 'datetime', format: 'YYYY-MM-DD HH:mm', initialDate: '2026-11-05 00:00' });
+  await page.locator('.ddtp-range-time[data-endpoint="start"] .ddtp-hour').fill('09');
+  await page.locator('.ddtp-range-time[data-endpoint="end"] .ddtp-hour').fill('18');
+  await day(11, 12).click(); await day(11, 5).click();
+  const s = await state();
+  assert.equal(s.complete, true); assert.equal(s.days, 8);
+  assert.match(s.startDate, /^2026-11-05 09:00$/); assert.match(s.endDate, /^2026-11-12 18:00$/);
+  assert.equal(await page.locator('.ddtp-range-time[data-endpoint="start"] .ddtp-hour').inputValue(), '09');
+  assert.equal(await page.locator('.ddtp-range-time[data-endpoint="end"] .ddtp-hour').inputValue(), '18');
+  // 비활성 날짜를 가로지르게 되는 교환은 선택되지 않고 첫 선택이 유지된다.
+  await create({ disabledDates: ['2026-11-08'], autoClose: false, confirmButton: true });
+  await day(11, 12).click(); await day(11, 5).click();
+  const blocked = await state();
+  assert.equal(blocked.complete, false); assert.match(blocked.startDate, /^2026-11-12/);
+  // 거부 사유가 status 에 표시된다. (비활성 날짜 포함)
+  assert.equal(await page.locator('.ddtp-range-status').textContent(), 'The range includes dates that cannot be selected.');
+  assert.equal(await page.locator('.ddtp-range-status').evaluate(el => el.classList.contains('ddtp-range-error')), true);
+  // 비활성 요일도 같은 방식으로 안내한다.
+  await create({ disabledWeekdays: [0], autoClose: false, confirmButton: true });
+  await day(11, 5).click(); await day(11, 12).click();
+  assert.equal((await state()).complete, false);
+  assert.equal(await page.locator('.ddtp-range-status').textContent(), 'The range includes dates that cannot be selected.');
+  // 사용자 메시지로 바꿀 수 있고, 유효한 선택은 메시지를 지운다.
+  await create({ disabledDates: ['2026-11-10'], autoClose: false, confirmButton: true }, { rangeDisabled: '10일은 선택 불가' });
+  await day(11, 6).click(); await day(11, 13).click();
+  assert.equal(await page.locator('.ddtp-range-status').textContent(), '10일은 선택 불가');
+  await day(11, 9).click();
+  assert.equal((await state()).complete, true);
+  assert.equal(await page.locator('.ddtp-range-status').evaluate(el => el.classList.contains('ddtp-range-error')), false);
 });
 for (const allowSameDate of [false, true]) test(`same date ${allowSameDate}`, async () => {
   await create({ allowSameDate });
@@ -280,4 +312,135 @@ test('a single initial startDate or endDate fills both ends unless the range rul
   // 둘 다 있으면 그대로 둔다.
   await init({ startDate: '2026-11-05', endDate: '2026-11-12' });
   assert.equal((await state()).days, 8);
+});
+
+test('an end date outside minRange or maxRange shows a prominent status message until the next valid action', async () => {
+  const status = page.locator('.ddtp-range-status');
+  await create({ minRange: 3, maxRange: 5, autoClose: false, confirmButton: true });
+  await day(11, 5).click(); await day(11, 6).click();
+  assert.equal((await state()).complete, false);
+  assert.equal(await status.textContent(), 'Select at least 3 days.');
+  assert.equal(await status.evaluate(el => el.classList.contains('ddtp-range-error')), true);
+  assert.equal(await status.getAttribute('aria-live'), 'assertive');
+  // 오류가 색으로도 구분되어야 한다 (일반 상태와 글자색이 다르다).
+  const errorColor = await status.evaluate(el => getComputedStyle(el).color);
+  await day(11, 20).click();
+  assert.equal(await status.textContent(), 'You can select up to 5 days.');
+  // 호버 미리보기로 다시 그려져도 메시지가 유지된다.
+  await day(11, 8).hover();
+  assert.equal(await status.textContent(), 'You can select up to 5 days.');
+  // 유효한 종료일을 고르면 메시지가 사라진다.
+  await day(11, 8).click();
+  assert.equal((await state()).days, 4);
+  assert.equal(await status.evaluate(el => el.classList.contains('ddtp-range-error')), false);
+  assert.match(await status.textContent(), /\(4\)$/);
+  assert.notEqual(await status.evaluate(el => getComputedStyle(el).color), errorColor);
+  // 다시 시작일을 고르거나 취소하면 오류가 남지 않는다.
+  await day(11, 1).click(); await day(11, 2).click();
+  assert.match(await status.textContent(), /^Select at least 3 days/);
+  await page.locator('.ddtp-range-cancel').click();
+  assert.equal(await status.evaluate(el => el.classList.contains('ddtp-range-error')), false);
+  // allowSameDate: false 는 최소 2일이다. 사용자 메시지도 {days} 를 치환한다.
+  await create({ allowSameDate: false, autoClose: false }, { rangeMin: '최소 {days}일' });
+  await day(11, 5).click(); await day(11, 5).click();
+  assert.equal(await status.textContent(), '최소 2일');
+  assert.equal((await state()).complete, false);
+});
+
+test('pressing a rejected end date again restarts the range from that date', async () => {
+  const status = page.locator('.ddtp-range-status');
+  await page.evaluate(() => {
+    window.starts = [];
+    window.picker = Daracl.dateTimePicker.create('#calendar', { inline: true, initialDate: '2026-11-05', selectionMode: 'range', disabledDates: ['2026-11-10'], autoClose: false, confirmButton: true, onRangeStart: date => starts.push(date.getDate()) });
+  });
+  await day(11, 6).click(); await day(11, 13).click();
+  assert.equal(await status.textContent(), 'The range includes dates that cannot be selected.');
+  // 같은 날짜를 다시 누르면 그 날짜가 시작일이 되고 오류 표시는 사라진다.
+  await day(11, 13).click();
+  const restarted = await state();
+  assert.equal(restarted.complete, false); assert.match(restarted.startDate, /^2026-11-13/); assert.equal(restarted.endDate, null); assert.equal(restarted.selecting, 'end');
+  assert.equal(await status.evaluate(el => el.classList.contains('ddtp-range-error')), false);
+  assert.equal(await status.textContent(), 'Select end date');
+  assert.deepEqual(await page.evaluate(() => starts), [6, 13]);
+  await day(11, 15).click();
+  assert.equal((await state()).days, 3);
+  // 다른 날짜를 누르면 기존처럼 종료일로 처리한다.
+  await day(11, 1).click(); await day(11, 20).click();
+  assert.equal(await status.evaluate(el => el.classList.contains('ddtp-range-error')), true);
+  await day(11, 2).click();
+  assert.match((await state()).startDate, /^2026-11-01/); assert.match((await state()).endDate, /^2026-11-02/);
+  // 길이 제한(minRange)으로 거부된 날짜도 같은 방식으로 시작일이 된다.
+  await create({ minRange: 3, autoClose: false, confirmButton: true });
+  await day(11, 5).click(); await day(11, 6).click();
+  assert.equal(await status.evaluate(el => el.classList.contains('ddtp-range-error')), true);
+  await day(11, 6).click();
+  assert.match((await state()).startDate, /^2026-11-06/); assert.equal((await state()).complete, false);
+});
+
+test('disabled days are drawn with a hatch pattern, strike-through and a not-allowed cursor', async () => {
+  await create({ disabledDates: ['2026-11-10'], autoClose: false });
+  const style = await day(11, 10).evaluate(cell => { const css = getComputedStyle(cell), span = getComputedStyle(cell.querySelector('span')); return { image: css.backgroundImage, cursor: css.cursor, line: span.textDecorationLine }; });
+  assert.match(style.image, /repeating-linear-gradient/);
+  assert.equal(style.cursor, 'not-allowed');
+  assert.equal(style.line, 'line-through');
+  const normal = await day(11, 9).evaluate(cell => ({ image: getComputedStyle(cell).backgroundImage, line: getComputedStyle(cell.querySelector('span')).textDecorationLine }));
+  assert.equal(normal.image, 'none'); assert.equal(normal.line, 'none');
+});
+
+test('pressing the end date of a complete range keeps the start and re-selects only the end', async () => {
+  for (const resetRangeOnStart of [true, false]) {
+    await page.evaluate(resetRangeOnStart => {
+      window.picker?.destroy(); window.log = [];
+      window.picker = Daracl.dateTimePicker.create('#calendar', { inline: true, initialDate: '2026-11-05', selectionMode: 'range', autoClose: false, confirmButton: true, resetRangeOnStart,
+        onRangeStart: date => log.push('start' + date.getDate()), onRangeChange: range => log.push(range.complete ? 'change-complete' : 'change-partial'), onRangeComplete: () => log.push('complete') });
+    }, resetRangeOnStart);
+    await day(11, 6).click(); await day(11, 12).click();
+    assert.equal((await state()).complete, true);
+    await page.evaluate(() => { log.length = 0; });
+    await day(11, 12).click();
+    const reopened = await state();
+    assert.equal(reopened.complete, false, String(resetRangeOnStart)); assert.match(reopened.startDate, /^2026-11-06/); assert.equal(reopened.endDate, null); assert.equal(reopened.selecting, 'end');
+    assert.deepEqual(await page.evaluate(() => log), ['change-partial']); // onRangeStart 는 다시 호출되지 않는다.
+    assert.equal(await page.locator('.ddtp-range-confirm').isDisabled(), true);
+    await day(11, 15).click();
+    assert.equal((await state()).days, 10);
+    assert.deepEqual(await page.evaluate(() => log), ['change-partial', 'change-complete', 'complete']);
+  }
+});
+
+test('a double click or a held key on the end date does not undo the range it just completed', async () => {
+  await create({ autoClose: false, confirmButton: true });
+  await day(11, 6).click();
+  await day(11, 12).dblclick(); // 첫 클릭이 종료일을 확정하고, 두 번째 클릭(detail 2)은 무시된다.
+  const afterDouble = await state();
+  assert.equal(afterDouble.complete, true); assert.match(afterDouble.endDate, /^2026-11-12/);
+  // 완료된 기간의 종료일에서 Enter 를 누르면 재선택, 길게 눌러 생기는 반복 입력은 무시한다.
+  await day(11, 12).focus();
+  await page.keyboard.press('Enter');
+  assert.equal((await state()).complete, false);
+  await day(11, 12).evaluate(cell => cell.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', repeat: true, bubbles: true })));
+  assert.equal((await state()).complete, false);
+  await page.keyboard.press('Enter');
+  assert.equal((await state()).complete, true);
+});
+
+test('a same-day end time earlier than the start time is rejected with a message', async () => {
+  const status = page.locator('.ddtp-range-status');
+  await create({ mode: 'datetime', format: 'YYYY-MM-DD HH:mm', initialDate: '2026-11-05 00:00', autoClose: false, confirmButton: true });
+  await page.locator('.ddtp-range-time[data-endpoint="start"] .ddtp-hour').fill('18');
+  await page.locator('.ddtp-range-time[data-endpoint="end"] .ddtp-hour').fill('09');
+  await day(11, 6).click(); await day(11, 6).click();
+  assert.equal((await state()).complete, false);
+  assert.equal(await status.textContent(), 'The end time must be later than the start time.');
+  assert.equal(await status.evaluate(el => el.classList.contains('ddtp-range-error')), true);
+  // 종료 시간을 시작 시간보다 늦게 고쳐서 같은 날짜를 다시 고르면 완료된다. (거부 직후 같은 날짜 재클릭은 새 시작일이므로 다른 날짜로 확인)
+  await page.locator('.ddtp-range-time[data-endpoint="end"] .ddtp-hour').fill('20');
+  await day(11, 8).click();
+  assert.equal((await state()).complete, true);
+  // 완료된 기간에서 시간 입력을 같은 날짜의 역전 값으로 바꾸면 거부 사유를 보여주고 이전 값으로 되돌린다.
+  await create({ mode: 'datetime', format: 'YYYY-MM-DD HH:mm', startDate: '2026-11-05 09:00', endDate: '2026-11-05 18:00', autoClose: false, confirmButton: true });
+  await page.locator('.ddtp-range-time[data-endpoint="start"] .ddtp-hour').fill('19');
+  assert.equal(await status.textContent(), 'The end time must be later than the start time.');
+  assert.match((await state()).startDate, /09:00$/);
+  assert.equal(await page.locator('.ddtp-range-time[data-endpoint="start"] .ddtp-hour').inputValue(), '09');
 });

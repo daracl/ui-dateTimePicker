@@ -342,8 +342,14 @@ $ddtp-themes: (
 
         &.disabled {
           background-color: themes.themed(disabled-bg);
-          opacity: 0.5;
-          cursor: auto;
+          // 선택할 수 없는 날짜는 사선 무늬와 취소선으로 한눈에 구분한다. (라이트 / 다크 모두에서 보이도록 반투명 회색 사용)
+          background-image: repeating-linear-gradient(135deg, transparent 0 4px, rgba(128, 128, 128, 0.5) 4px 5px);
+          opacity: 0.6;
+          cursor: not-allowed;
+
+          > span {
+            text-decoration: line-through;
+          }
 
           &:before {
             background-color: transparent;
@@ -520,6 +526,7 @@ $ddtp-themes: (
   .ddtp-datetime[view-mode="month"], .ddtp-datetime[view-mode="year"] { width: 235px; }
   .ddtp-range-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; margin: 8px 15px; max-width: 480px; }
   .ddtp-range-status { flex: 1 1 auto; min-width: 0; }
+  .ddtp-range-status.ddtp-range-error { padding: 4px 8px; border: 1px solid themes.themed(error-border-color); border-radius: 4px; background: themes.themed(error-bg); color: themes.themed(error-color); font-weight: bold; }
   .ddtp-range-actions button { width: auto; padding: 4px 12px; }
   .ddtp-range-actions button:disabled { opacity: .5; cursor: default; }
   .ddtp-body .ddtp-day.ddtp-in-range,

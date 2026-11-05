@@ -15,7 +15,7 @@ declare const APP_VERSION: string;
 let DEFAULT_OPTIONS: DateTimePickerOptions = {
   selectionMode: 'single', numberOfMonths: 2, responsive: true,
   startDate: null, endDate: null, minRange: 0, maxRange: null,
-  allowSameDate: true, allowReverse: false, resetRangeOnStart: true,
+  allowSameDate: true, allowReverse: true, resetRangeOnStart: true,
   confirmButton: false, clearButton: true, showRangeHighlight: true,
   showRangePreview: true, showOutsideDays: true,
   inline: false, // layer or innerhtml
@@ -40,15 +40,28 @@ let DEFAULT_OPTIONS: DateTimePickerOptions = {
   },
 };
 
+// z-index 는 숫자만 허용한다. 문자열을 그대로 style 에 넣으면 다른 CSS 속성이 주입될 수 있다.
+function normalizeZIndex(value: unknown): number {
+  const num = Number(value);
+  return Number.isFinite(num) ? Math.trunc(num) : 1000;
+}
+
 function hiddenElement() {
   if (document.getElementById("hiddenDaraDatetimeElement") == null) {
-    document.querySelector("body")?.insertAdjacentHTML("beforeend", `<div id="hiddenDaraDatetimeElement" class="daracl-datetime-hidden"></div>`);
+    // body 가 아직 없는 시점(head 에서 생성)에도 팝업이 사라지지 않게 documentElement 로 대체한다.
+    (document.body ?? document.documentElement).insertAdjacentHTML("beforeend", `<div id="hiddenDaraDatetimeElement" class="daracl-datetime-hidden"></div>`);
   }
 
   return document.getElementById("hiddenDaraDatetimeElement");
 }
 
+// 팝업과 화면 가장자리 사이의 최소 간격(px).
+const VIEWPORT_MARGIN = 8;
+
 let daraDatetimeIdx = 0;
+
+// 요소별 현재 인스턴스. 같은 요소에 다시 생성하면 이전 인스턴스를 destroy 한다.
+const INSTANCES = new WeakMap<HTMLElement, DateTimePicker>();
 
 /**
  * date timepicker
@@ -64,6 +77,9 @@ export class DateTimePicker {
   private rangeState: DateRangeState = { ...rangeResult(null, null), selecting: 'start', committed: false, activeDate: null };
   private committedRange: DateRangeResult = rangeResult(null, null);
   private hasCommittedRange = false;
+  private rangeError = '';
+  // 종료일 선택이 거부된 날짜. 같은 날짜를 다시 누르면 그 날짜를 새 시작일로 바꾼다.
+  private rangeRejectedDay: number | null = null;
   private rangeMedia?: MediaQueryList;
   private disabledRangeDays = new Set<number>();
   private readonly rangeResize = () => { if (!this.destroyed) { this.refresh(false); this.measurePosition()?.(); } };
@@ -84,6 +100,8 @@ export class DateTimePicker {
   private isInput: boolean = false;
 
   private isVisible = false;
+  private positionKey = '';
+  private timeEventBound = false;
   private destroyed = false;
   private originalClassName = '';
   private originalContent = '';
@@ -113,6 +131,8 @@ export class DateTimePicker {
 
   constructor(selector: string | HTMLElement, options: Partial<DateTimePickerOptions> = {}, message?: MessageOptions) {
     this.options = Object.assign({}, DEFAULT_OPTIONS, Object.fromEntries(Object.entries(options).filter(([, value]) => value !== undefined)));
+
+    this.options.zIndex = normalizeZIndex(this.options.zIndex);
 
     daraDatetimeIdx += 1;
 
@@ -178,6 +198,10 @@ export class DateTimePicker {
 
     if (this.isRange) this.initializeRange();
 
+    // 옵션 검증을 모두 통과한 뒤에 이전 인스턴스를 정리한다. (생성이 실패하면 이전 인스턴스를 유지)
+    INSTANCES.get(selectorElement)?.destroy();
+    INSTANCES.set(selectorElement, this);
+
     if (this.options.inline) {
       this.originalClassName = selectorElement.className;
       this.originalContent = selectorElement.innerHTML;
@@ -190,7 +214,8 @@ export class DateTimePicker {
 
       const datetimeElement = document.createElement("div");
       datetimeElement.className = `daracl-datetime-wrapper ddtp-${daraDatetimeIdx} layer`;
-      datetimeElement.setAttribute("style", `z-index:${this.options.zIndex};`);
+      // setAttribute("style") 는 CSP(style-src)에서 차단되므로 CSSOM 으로 지정한다.
+      datetimeElement.style.zIndex = String(this.options.zIndex);
       hiddenElement()?.appendChild(datetimeElement);
 
       this.datetimeElement = datetimeElement;
@@ -341,10 +366,12 @@ export class DateTimePicker {
   private initHeaderEvent() {
     const isRTL = this.options.isRTL;
     this.datetimeElement.querySelector(".ddtp-move-btn.prev")?.addEventListener("click", (e: Event) => {
+      e.preventDefault();
       this.moveDate(isRTL ? "next" : "prev", e);
     });
 
     this.datetimeElement.querySelector(".ddtp-move-btn.next")?.addEventListener("click", (e: Event) => {
+      e.preventDefault();
       this.moveDate(isRTL ? "prev" : "next", e);
     });
 
@@ -426,7 +453,8 @@ export class DateTimePicker {
    * @public
    */
   public initTimeEvent() {
-    if (!this.isTimeMode()) return;
+    if (!this.isTimeMode() || this.timeEventBound) return;
+    this.timeEventBound = true;
     if (this.isRange) { this.initRangeTimeEvent(); return; }
 
     let hh = this.currentDate.format("HH");
@@ -593,12 +621,19 @@ export class DateTimePicker {
       }
     }
     const minLeft = this.options.isPositionFixed ? 0 : scrollLeft;
-    left = Math.max(minLeft, Math.min(left, minLeft + docSize.clientWidth - this.datetimeElement.offsetWidth));
+    // 화면 가장자리에 붙지 않도록 좌우에 여백을 둔다.
+    left = Math.max(minLeft + VIEWPORT_MARGIN, Math.min(left, minLeft + docSize.clientWidth - this.datetimeElement.offsetWidth - VIEWPORT_MARGIN));
 
-    const css = `${this.options.isPositionFixed ? "position:fixed;" : ""}top:${top}px;left:${left}px;z-index:${this.options.zIndex}`;
+    const key = `${this.options.isPositionFixed}|${top}|${left}|${this.options.zIndex}`;
     return () => {
-      if (!this.isVisible || this.destroyed) return;
-      if (this.datetimeElement.getAttribute('style') !== css) this.datetimeElement.setAttribute('style', css);
+      if (!this.isVisible || this.destroyed || this.positionKey === key) return;
+      // 속성 문자열 대신 CSSOM 으로 쓰면 style-src 가 엄격한 CSP 에서도 위치가 적용된다.
+      const style = this.datetimeElement.style;
+      style.position = this.options.isPositionFixed ? "fixed" : "";
+      style.top = `${top}px`;
+      style.left = `${left}px`;
+      style.zIndex = String(this.options.zIndex);
+      this.positionKey = key;
     };
   }
 
@@ -638,6 +673,7 @@ export class DateTimePicker {
     unregisterPopup(this.popupClient);
     this.rangeMedia?.removeEventListener('change', this.rangeResize);
     this.targetElement.removeEventListener('click', this._targetClickEvent);
+    if (INSTANCES.get(this.targetElement) === this) INSTANCES.delete(this.targetElement);
     if (this.options.inline) {
       this.targetElement.className = this.originalClassName;
       this.targetElement.innerHTML = this.originalContent;
@@ -748,10 +784,10 @@ export class DateTimePicker {
 
                 <span class="ddtp-date-move">  
                     ${this.options.enableTodayBtn ? `<button type="button" class="ddtp-today">${escapeHtml(this.language.getMessage("today"))}</button>` : ""}
-                    <a href="javascript:;" class="ddtp-move-btn prev">
+                    <a href="#" class="ddtp-move-btn prev">
                         <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px" fill="#000000"><path d="M0 0h24v24H0z" fill="none"/><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
                     </a>
-                    <a href="javascript:;" class="ddtp-move-btn next">
+                    <a href="#" class="ddtp-move-btn next">
                         <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px" fill="#000000"><path d="M0 0h24v24H0z" fill="none"/><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
                     </a> 
                 </span>
@@ -1103,11 +1139,15 @@ export class DateTimePicker {
     if (end < start || this.rangeDayDisabled(end)) return false;
     const days = calendarDay(end) - calendarDay(start) + 1;
     if ((!this.options.allowSameDate && days === 1) || days < this.options.minRange! || (this.options.maxRange != null && days > this.options.maxRange)) return false;
-    // 비활성 날짜를 가로지르는 기간도 거부하며 긴 기간을 하루씩 순회하지 않습니다.
-    const first = calendarDay(start), last = calendarDay(end);
-    for (const day of this.disabledRangeDays) if (day >= first && day <= last) return false;
-    for (const weekday of this.options.disabledWeekdays || []) if ((weekday - start.getDay() + 7) % 7 < days) return false;
-    return true;
+    return !this.rangeCrossesDisabled(start, end);
+  }
+
+  // 기간 안에 비활성 날짜 / 요일이 들어 있는지 확인한다. 긴 기간을 하루씩 순회하지 않는다.
+  private rangeCrossesDisabled(start: Date, end: Date): boolean {
+    const first = calendarDay(start), last = calendarDay(end), days = last - first + 1;
+    for (const day of this.disabledRangeDays) if (day >= first && day <= last) return true;
+    for (const weekday of this.options.disabledWeekdays || []) if ((weekday - start.getDay() + 7) % 7 < days) return true;
+    return false;
   }
 
   public getRange(): DateRangeResult { return rangeResult(this.rangeState.startDate, this.rangeState.endDate); }
@@ -1141,8 +1181,31 @@ export class DateTimePicker {
     return true;
   }
 
+  // 종료일 선택이 거부되는 사유(길이 제한 / 비활성 날짜 포함)를 안내 메시지로 반환한다. 사유가 없으면 빈 문자열이다.
+  private rangeSelectError(start: Date, end: Date): string {
+    const days = calendarDay(end) - calendarDay(start) + 1, min = Math.max(this.options.minRange!, this.options.allowSameDate ? 1 : 2), max = this.options.maxRange;
+    if (days < min) return String(this.language.getMessage('rangeMin')).replace('{days}', String(min));
+    if (max != null && days > max) return String(this.language.getMessage('rangeMax')).replace('{days}', String(max));
+    if (this.rangeCrossesDisabled(start, end)) return String(this.language.getMessage('rangeDisabled'));
+    if (end < start) return String(this.language.getMessage('rangeTimeOrder'));
+    return '';
+  }
+
   private selectRangeDate(date: Date, event: Event) {
-    const starting = this.rangeState.selecting === 'start';
+    // 거부 안내가 떠 있는 상태에서 같은 날짜를 다시 누르면 종료일이 아니라 새 시작일로 처리한다.
+    const retry = !!this.rangeError && this.rangeRejectedDay === calendarDay(date);
+    // 완료된 기간의 종료일을 다시 누르면 시작일은 유지하고 종료일만 다시 고른다. (resetRangeOnStart 와 무관)
+    const { startDate, endDate } = this.rangeState;
+    if (!retry && this.rangeState.complete && startDate && endDate && calendarDay(date) === calendarDay(endDate)) {
+      // 더블클릭의 두 번째 클릭이 방금 확정한 기간을 되돌리지 않게 한다.
+      if ((event as MouseEvent).detail > 1) return;
+      this.rangeError = ''; this.rangeRejectedDay = null;
+      this.applyRange(cloneDate(startDate), null, event, false);
+      return;
+    }
+    const starting = this.rangeState.selecting === 'start' || retry;
+    this.rangeError = '';
+    this.rangeRejectedDay = null;
     if (this.isTimeMode()) {
       const [hour, minute] = this.rangeTimeInputs(starting ? 'start' : 'end');
       date.setHours(+hour.value, +minute.value, 0, 0);
@@ -1150,9 +1213,21 @@ export class DateTimePicker {
     let start = starting ? date : cloneDate(this.rangeState.startDate);
     let end = starting ? (this.options.resetRangeOnStart ? null : cloneDate(this.rangeState.endDate)) : date;
     if (starting && end && !this.validRange(start, end)) end = null;
-    if (!starting && start && end && end < start) {
+    // 시작일보다 이른 날을 고르면 먼저 고른 날을 종료일로, 새로 고른 날을 시작일로 바꾼다.
+    if (!starting && start && end && calendarDay(end) < calendarDay(start)) {
       if (!this.options.allowReverse) return;
-      [start, end] = [end, start];
+      const first = start;
+      start = end; end = first;
+      // 시간은 날짜를 따라가지 않고 시작 / 종료 시간 그룹의 값을 따른다.
+      if (this.isTimeMode()) {
+        const [startHour, startMinute] = this.rangeTimeInputs('start'), [endHour, endMinute] = this.rangeTimeInputs('end');
+        start.setHours(+startHour.value, +startMinute.value, 0, 0);
+        end.setHours(+endHour.value, +endMinute.value, 0, 0);
+      }
+    }
+    if (!starting && start && end) {
+      const message = this.rangeSelectError(start, end);
+      if (message) { this.rangeError = message; this.rangeRejectedDay = calendarDay(date); this.paintRange(); return; }
     }
     if (this.applyRange(start, end, event, starting)) {
       this.syncRangeTime();
@@ -1173,6 +1248,7 @@ export class DateTimePicker {
   }
 
   public clearRange(): boolean {
+    this.rangeError = '';
     if (!this.applyRange(null, null)) return false;
     if (!this.options.confirmButton) this.confirmRange();
     this.syncRangeTime();
@@ -1194,6 +1270,7 @@ export class DateTimePicker {
 
   // 선택 상태를 마지막으로 확정한 값으로 되돌린다. 팝업은 닫지 않는다.
   private revertRange() {
+    this.rangeError = '';
     const before = this.getRange();
     this.rangeState = { ...rangeResult(this.committedRange.startDate, this.committedRange.endDate), selecting: 'start', committed: this.hasCommittedRange, activeDate: null };
     this.paintRange();
@@ -1238,6 +1315,7 @@ export class DateTimePicker {
       const cell = (event.target as Element).closest('.ddtp-day');
       if (cell && (event.key === 'Enter' || event.key === ' ')) {
         event.preventDefault();
+        if (event.repeat) return; // 키를 길게 눌러 선택이 반복되는 것을 막는다.
         if (!cell.classList.contains('disabled')) this.selectRangeDate(this.rangeCellDate(cell), event);
       }
     });
@@ -1304,7 +1382,11 @@ export class DateTimePicker {
       cell.setAttribute('aria-label', format(this.rangeCellDate(cell), this.dateFormat, this.language));
     });
     const status = this.datetimeElement.querySelector('.ddtp-range-status');
-    if (status) status.textContent = state.complete ? `${this.formatRange(this.getRange())} (${state.days})` : this.language.getMessage(state.startDate ? 'selectRangeEnd' : 'selectRangeStart');
+    if (status) {
+      status.classList.toggle('ddtp-range-error', !!this.rangeError);
+      status.setAttribute('aria-live', this.rangeError ? 'assertive' : 'polite');
+      status.textContent = this.rangeError || (state.complete ? `${this.formatRange(this.getRange())} (${state.days})` : this.language.getMessage(state.startDate ? 'selectRangeEnd' : 'selectRangeStart'));
+    }
     const confirm = this.datetimeElement.querySelector('.ddtp-range-confirm') as HTMLButtonElement | null;
     if (confirm) confirm.disabled = !!state.startDate && !state.complete;
   }
@@ -1312,8 +1394,8 @@ export class DateTimePicker {
   private syncRangeTime() {
     if (!this.isTimeMode()) return;
     for (const endpoint of ['start', 'end'] as const) {
-      // 종료일이 아직 없으면 사용자가 입력해 둔 종료 시간을 유지한다.
-      const date = endpoint === 'start' ? this.rangeState.startDate || new Date(this.currentDate.getTime()) : this.rangeState.endDate;
+      // 해당 날짜가 아직 없으면 사용자가 입력해 둔 시간을 유지한다. (초기값은 initRangeTimeEvent 에서 채운다)
+      const date = endpoint === 'start' ? this.rangeState.startDate : this.rangeState.endDate;
       if (!date) continue;
       const [hour, minute] = this.rangeTimeInputs(endpoint);
       const group = hour.closest('.ddtp-range-time')!;
@@ -1329,7 +1411,9 @@ export class DateTimePicker {
     if (date) {
       const [hour, minute] = this.rangeTimeInputs(endpoint);
       date.setHours(+hour.value, +minute.value, 0, 0);
-      this.applyRange(start, end, event);
+      const message = start && end ? this.rangeSelectError(start, end) : '';
+      if (message) { this.rangeError = message; this.rangeRejectedDay = null; this.paintRange(); }
+      else { this.rangeError = ''; this.applyRange(start, end, event); }
     }
     this.syncRangeTime();
   }
@@ -1373,6 +1457,7 @@ export class DateTimePicker {
 function getDocSize() {
   return {
     clientHeight: Math.max(document.documentElement.clientHeight, window.innerHeight || 0),
-    clientWidth: Math.max(document.documentElement.clientWidth, window.innerWidth || 0),
+    // innerWidth 는 세로 스크롤바를 포함하므로, 팝업이 스크롤바 아래로 넘쳐 가로 스크롤이 생기지 않게 clientWidth 를 우선한다.
+    clientWidth: document.documentElement.clientWidth || window.innerWidth || 0,
   };
 }

@@ -14,7 +14,9 @@ for (const file of ['index.js', 'index.min.js', 'index.cjs', 'index.min.cjs',
   'demo.css', 'demo.js', 'theme-vars.css']) {
   assert.ok(existsSync(path.join(root, 'dist', file)), `Missing output: ${file}`);
 }
-assert.ok(existsSync(path.join(root, pkg.exports['./umd'].import)));
+for (const condition of ['import', 'require', 'default']) {
+  assert.ok(existsSync(path.join(root, pkg.exports['./umd'][condition])), `Missing ./umd ${condition} target`);
+}
 for (const file of ['index.js', 'index.min.js', 'index.cjs', 'index.min.cjs',
   'daracl.datetimepicker.umd.js', 'daracl.datetimepicker.min.umd.js']) {
   const code = readFileSync(path.join(root, 'dist', file), 'utf8');

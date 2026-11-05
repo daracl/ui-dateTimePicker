@@ -45,7 +45,9 @@
       "require": "./dist/index.cjs"
     },
     "./umd": {
-      "import": "./dist/daracl.datetimepicker.umd.js"
+      "import": "./dist/daracl.datetimepicker.umd.js",
+      "require": "./dist/daracl.datetimepicker.umd.js",
+      "default": "./dist/daracl.datetimepicker.umd.js"
     },
     "./dist/*": "./dist/*",
     "./style/*": "./style/*"
@@ -70,6 +72,7 @@
     "@playwright/test": "^1.55.1",
     "@types/node": "^20.1.0",
     "material-icons": "^1.13.8",
+    "playwright": "^1.55.1",
     "prettier": "^2.8.8",
     "rollup-plugin-visualizer": "^6.0.3",
     "sass": "^1.106.1",
@@ -98,6 +101,11 @@
     "audit:security:all": "npm audit",
     "test:package": "node scripts/package-smoke.mjs",
     "test:types": "tsc --noEmit --strict --module ESNext --moduleResolution Bundler --target ES2020 --lib ES2020,DOM tests/types.ts"
+  },
+  "overrides": {
+    "typedoc": {
+      "minimatch": "^11.0.1"
+    }
   },
   "engines": {
     "node": "^20.19.0 || >=22.12.0"

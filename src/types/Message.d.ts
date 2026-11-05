@@ -13,6 +13,10 @@ export interface Message {
     rangeEnd?: string;
     selectRangeStart?: string;
     selectRangeEnd?: string;
+    rangeMin?: string;
+    rangeMax?: string;
+    rangeDisabled?: string;
+    rangeTimeOrder?: string;
     months: {
         full: string[];
         abbr: string[];

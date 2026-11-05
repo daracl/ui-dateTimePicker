@@ -239,6 +239,9 @@ const dateTimeRange = Daracl.dateTimePicker.create('#dateTimeRange', {
   clear: '초기화', cancel: '취소', time: '시간',
   rangeStart: '시작', rangeEnd: '종료',
   selectRangeStart: '시작일을 선택하세요', selectRangeEnd: '종료일을 선택하세요',
+  rangeMin: '최소 {days}일 이상 선택하세요.', rangeMax: '최대 {days}일까지 선택할 수 있습니다.', // minRange / maxRange 를 벗어나면 status 에 표시
+  rangeDisabled: '선택할 수 없는 날짜가 포함되어 있습니다.', // 비활성 날짜 / 요일이 기간 안에 있을 때
+  rangeTimeOrder: '종료 시간은 시작 시간보다 늦어야 합니다.', // 같은 날짜에서 종료 시간이 시작 시간보다 빠를 때
   ok: '확인'
 });
 ```
@@ -258,7 +261,7 @@ const dateTimeRange = Daracl.dateTimePicker.create('#dateTimeRange', {
 | `startDate`, `endDate` | `null` | `Date` 또는 기존 `format`에 맞춘 문자열. 둘 중 하나만 지정하면 같은 값으로 양쪽을 채웁니다(`minRange`, `allowSameDate` 등 규칙에 맞지 않으면 채우지 않음) |
 | `minRange`, `maxRange` | `0`, `null` | 양 끝을 포함한 최소/최대 달력 일수. 0/null은 제한 없음 |
 | `allowSameDate` | `true` | 동일 날짜 허용. datetime도 날짜 기준이며 시간 순서는 별도 검사 |
-| `allowReverse` | `false` | 종료일을 먼저 선택하면 거부; true이면 두 일시를 교환 |
+| `allowReverse` | `true` | 시작일보다 이른 날을 고르면 먼저 고른 날을 종료일, 새로 고른 날을 시작일로 교환합니다. `false`이면 선택을 거부합니다 |
 | `resetRangeOnStart` | `true` | 완료 후 새 시작일 선택 시 종료일 제거. false는 유효한 종료일을 유지하고, 무효하면 제거 |
 | `autoClose` | `true` | 확정 후 팝업 닫기. inline에는 영향 없음 |
 | `confirmButton`, `clearButton` | `false`, `true` | 확인/초기화 버튼 표시. 취소 버튼은 항상 표시 |
@@ -276,6 +279,16 @@ Daracl.dateTimePicker.create('#responsiveRange', {
 });
 // 항상 2개월을 표시하려면 responsive: false.
 ```
+
+### 선택 동작
+
+날짜를 누를 때 아래 순서로 처리합니다.
+
+1. **거부 안내가 떠 있을 때 같은 날짜를 다시 누르면** 그 날짜가 새 시작일이 됩니다. (종료일이 `minRange`/`maxRange`/비활성 날짜 때문에 거부된 직후)
+2. **완료된 기간의 종료일을 다시 누르면** 시작일은 유지하고 종료일만 다시 고릅니다. `resetRangeOnStart`와 무관합니다. 더블클릭의 두 번째 클릭과 키 반복(Enter 길게 누름)은 무시합니다. `onRangeStart`는 다시 호출되지 않고 `onRangeChange`는 종료일이 없는 값으로 호출됩니다.
+3. 그 밖에는 시작일 → 종료일 순서로 선택합니다. 시작일보다 이른 날을 고르면 `allowReverse`(기본 `true`)에 따라 두 날짜를 바꿉니다.
+
+종료일 선택이 거부되면 사유(`rangeMin`, `rangeMax`, `rangeDisabled`, `rangeTimeOrder`)를 status 영역에 강조해서 보여줍니다.
 
 ### 확정과 취소
 

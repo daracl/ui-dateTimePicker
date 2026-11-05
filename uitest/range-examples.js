@@ -75,6 +75,7 @@ export function createRangeExamples(options, recordEvent) {
     }, {
       clear: '초기화', cancel: '취소', ok: '확인', time: '시간', rangeStart: '시작', rangeEnd: '종료',
       selectRangeStart: '시작일을 선택하세요', selectRangeEnd: '종료일을 선택하세요',
+      rangeMin: '최소 {days}일 이상 선택하세요.', rangeMax: '최대 {days}일까지 선택할 수 있습니다.', rangeDisabled: '선택할 수 없는 날짜가 포함되어 있습니다.', rangeTimeOrder: '종료 시간은 시작 시간보다 늦어야 합니다.',
     });
     update();
     return picker;
