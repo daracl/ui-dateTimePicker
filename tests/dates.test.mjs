@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { DateTimePicker as Picker } from '../dist/index.js';
+import { ENGLISH } from './english.mjs';
+
+// 기본 언어는 한국어이므로, 영어 이름을 기대하는 이 파일의 테스트는 영어 메시지를 적용한다. (한국어 기본값은 defaults.test.mjs)
+Picker.setMessage(ENGLISH);
 
 test('parser rejects invalid dates, incomplete values, mismatched separators and trailing text', () => {
   for (const value of ['2025-02-29', '2026-13-01', '2026-01-32', '2026-00-10', '2026-01-00', '2026-1-01', '2026/01/01', 'x2026-01-01', '2026-01-01x', '']) {

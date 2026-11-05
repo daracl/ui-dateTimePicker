@@ -13,12 +13,13 @@ export function createRangeExamples(options, recordEvent) {
       <p class="range-intro">시작일과 종료일을 차례로 선택하세요. 화면 너비가 768px 미만이면 달력이 하나로 바뀌고, 선택한 기간은 유지됩니다.</p>
       <div class="range-example-grid">
         <article class="card range-example">
-          <div class="card-heading"><div><h3>날짜 기간 · 자동 확정</h3><p>종료일을 선택하면 확정됩니다. 위의 자동 닫기 옵션도 적용됩니다.</p></div></div>
+          <div class="card-heading"><div><h3>날짜 기간 · 자동 확정</h3><p>종료일을 선택하면 확정됩니다. 입력창 안쪽의 셀렉트박스로 선택한 종료일 기준 1주~6개월을 바로 채울 수 있고(시작일만 고르면 그 날짜가 종료일이 되고, 아무것도 없으면 오늘 기준이며, 최대 6개월이라 1년은 보이지 않습니다), 직접 고르는 기간도 6개월까지입니다.</p></div></div>
           <div class="range-example-content"><label for="rangeDateInput">여행 기간</label><div class="input-wrap"><input id="rangeDateInput" readonly placeholder="시작일 ~ 종료일" /></div>
           <pre class="range-state" id="rangeDateState" aria-live="polite"></pre>
           <details><summary>사용 코드</summary><pre><code>Picker.create('#rangeDateInput', {
   selectionMode: 'range', mode: 'date',
-  autoClose: true
+  maxRange: '6M',        // 최대 6개월 ('3M' · '1Y' · '2W', 숫자는 일 수)
+  autoClose: true        // periodSelect: false 로 프리셋 셀렉트박스를 끌 수 있음
 });</code></pre></details></div>
         </article>
         <article class="card range-example">
@@ -51,7 +52,7 @@ export function createRangeExamples(options, recordEvent) {
   const end = new Date(start); end.setDate(end.getDate() + 7); end.setHours(18);
   const excludedDate = new Date(start); excludedDate.setDate(excludedDate.getDate() + 5);
   const examples = [
-    ['rangeDateInput', 'rangeDateState', '날짜 기간', { mode: 'date' }],
+    ['rangeDateInput', 'rangeDateState', '날짜 기간', { mode: 'date', maxRange: '6M' }],
     ['rangeDatetimeInput', 'rangeDatetimeState', '일시 기간', { mode: 'datetime', startDate: start, endDate: end, autoClose: false, confirmButton: true }],
     ['rangeInline', 'rangeInlineState', '반응형 기간', { inline: true, mode: 'date', minRange: 2, maxRange: 10, disabledDates: [excludedDate], allowReverse: true, confirmButton: true }],
   ];
@@ -76,6 +77,8 @@ export function createRangeExamples(options, recordEvent) {
       clear: '초기화', cancel: '취소', ok: '확인', time: '시간', rangeStart: '시작', rangeEnd: '종료',
       selectRangeStart: '시작일을 선택하세요', selectRangeEnd: '종료일을 선택하세요',
       rangeMin: '최소 {days}일 이상 선택하세요.', rangeMax: '최대 {days}일까지 선택할 수 있습니다.', rangeDisabled: '선택할 수 없는 날짜가 포함되어 있습니다.', rangeTimeOrder: '종료 시간은 시작 시간보다 늦어야 합니다.',
+      rangeMaxPeriod: '최대 {period}까지 선택할 수 있습니다.', periodWeeks: '{n}주', periodMonths: '{n}개월', periodYears: '{n}년',
+      periodPlaceholder: '기간 선택', period1w: '일주일', period1m: '1개월', period3m: '3개월', period6m: '6개월', period1y: '1년',
     });
     update();
     return picker;

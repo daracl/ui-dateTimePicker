@@ -15,6 +15,16 @@ export interface Message {
     selectRangeEnd?: string;
     rangeMin?: string;
     rangeMax?: string;
+    rangeMaxPeriod?: string;
+    periodWeeks?: string;
+    periodMonths?: string;
+    periodYears?: string;
+    periodPlaceholder?: string;
+    period1w?: string;
+    period1m?: string;
+    period3m?: string;
+    period6m?: string;
+    period1y?: string;
     rangeDisabled?: string;
     rangeTimeOrder?: string;
     months: {

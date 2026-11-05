@@ -41,7 +41,7 @@ export default (dateStr: string, format: string = DEFAULT_FORMAT.date, language:
   let weekDay: number | undefined;
 
   for (let i = 0; i < len; ) {
-    let minLen = Math.min(MAX_CHAR_LENGTH, len - i);
+    const minLen = Math.min(MAX_CHAR_LENGTH, len - i);
     let j = minLen;
     for (; j > 0; j--) {
       const v = format.substring(i, i + j);
@@ -90,10 +90,8 @@ export default (dateStr: string, format: string = DEFAULT_FORMAT.date, language:
     }
   }
 
-  let date: Date;
-
   // setFullYear는 0~99년을 1900년대로 보정하지 않습니다.
-  date = new Date(0);
+  const date = new Date(0);
   date.setFullYear(dateInfo.year, dateInfo.month, dateInfo.day);
   date.setHours(dateInfo.hour, dateInfo.minute, dateInfo.second, dateInfo.millisecond);
   if (date.getFullYear() !== dateInfo.year || date.getMonth() !== dateInfo.month ||

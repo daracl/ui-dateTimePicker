@@ -12,7 +12,10 @@ export interface DateTimePickerOptions {
   startDate?: Date | string | null;
   endDate?: Date | string | null;
   minRange?: number;
-  maxRange?: number | null;
+  /** 선택할 수 있는 최대 기간. 숫자 · 단위 없는 문자열은 일 수(양 끝 포함), '2W'(주) · '3M'(개월) · '1Y'(년)은 시작일 기준 달력 단위. null 은 제한 없음 */
+  maxRange?: number | string | null;
+  /** range 에서 입력창 옆(inline 은 달력 위)에 기간 프리셋 셀렉트박스(1주 · 1개월 · 3개월 · 6개월 · 1년, 선택한 종료일 기준이며, 시작일만 있으면 그 시작일을, 아무것도 없으면 오늘을 종료일로 사용)를 표시할지 여부. 기본 true */
+  periodSelect?: boolean;
   allowSameDate?: boolean;
   allowReverse?: boolean;
   resetRangeOnStart?: boolean;

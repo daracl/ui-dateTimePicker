@@ -29,11 +29,11 @@
 | Daracl | `@daracl/core ^0.0.13`(peerDependencies + devDependencies, ESM/CJS 번들에서 **external**), `@daracl/ui-style ^0.0.8`(dependencies, SCSS 원본이 `style/` 에서 `@use`) |
 | 테스트 | Node 내장 test runner(`node --test`), `playwright`(브라우저 테스트, `@playwright/test` 의 하위 의존), `tsc` 타입 계약 검사 |
 | 문서 | TypeDoc `^0.28.13` (`tsconfig.doc.json`) |
-| 포맷 | Prettier `^2.8.8`. 설정은 `.prettierrc` (아래 코드 규칙 참조) |
+| 포맷 · 린트 | Prettier `^2.8.8`(설정은 `.prettierrc`), ESLint `^8.40.0`, `@typescript-eslint/*` `^5.59.5`, `eslint-config-prettier` `^8.8.0` (ui-grid 와 같은 선언 범위) |
 
 - `tsconfig.json`: `strict: true`, `strictPropertyInitialization: false`, target `ES2017`, `emitDeclarationOnly`, `declarationDir: ./dist`, 별칭 `@/*` → `src/*`, `@t/*` → `src/types/*`.
 - 번들 브라우저 대상: chrome87 · edge88 · firefox78 · safari14 (`vite.common.mjs`).
-- 린트 설정(ESLint)과 CI 워크플로(`.github/`)는 이 저장소에 없다.
+- ESLint 는 ui-grid 와 같은 규칙 세트(`.eslintrc.json`: `eslint:recommended` + `@typescript-eslint/recommended` + `prettier`)를 `src/**/*.ts` 에 적용한다. 규칙은 ui-grid 와 같지만 `quotes` 만 `warn` 이다 (아래 "코딩 규칙" 참조). 배포 CI 는 `.github/workflows/publish-npm.yml` 이다.
 
 ## 3. Project Structure
 
@@ -48,7 +48,7 @@ src/
   format/index.ts            Date → 문자열 (기본 export)
   util/parser.ts             문자열 → Date (엄격한 검증, 기본 export)
   util/popupEvents.ts        열린 팝업의 전역 resize / scroll / click / keydown 리스너를 하나로 공유
-  util/range.ts              기간 계산 (calendarDay · rangeResult · cloneDate)
+  util/range.ts              기간 계산 (calendarDay · rangeResult · cloneDate · parseRangePeriod · addPeriod: maxRange 의 2W · 3M · 1Y 해석과 프리셋 날짜 계산)
   util/utils.ts              escapeHtml · closestElement
   types/                     DateTimePickerOptions.d.ts · Message.d.ts (공개 타입)
 style/
@@ -77,6 +77,8 @@ docs/ / dist/                생성 문서 · 배포 산출물 (직접 수정 �
 ## 5. Coding Conventions
 
 - Prettier(`.prettierrc`): printWidth 512, tab 4, 작은따옴표, 세미콜론 없음, trailingComma all. **실제 소스는 파일마다 다르다** — `DateTimePicker.ts` · `format/` 은 큰따옴표 + 세미콜론 + 2칸, `DaraDate.ts` 는 4칸이다. 새 코드는 수정하는 파일의 주변 스타일에 맞추고, 파일 전체를 재포맷하지 않는다. (`package.json` 의 `prettier` 키는 `.prettierrc` 와 값이 다르다. 어느 쪽을 고칠지는 사용자에게 먼저 확인한다.)
+- ESLint(`.eslintrc.json`): ui-grid 와 같은 규칙에 `no-console: warn`, `semi: always`(error), `quotes: single`. **`quotes` 는 `warn` 으로 낮춰 두었다.** 이 저장소의 소스(`DateTimePicker.ts`, `format/`, `parser.ts` 등)가 큰따옴표를 쓰고 있어 309건이 걸리기 때문이다. 일괄 변환은 `npx eslint src --ext .ts --fix` 로 가능하지만 파일 대부분이 바뀌므로 사용자 확인 후에만 한다. 변환을 마치면 `quotes` 를 `error` 로 올려 ui-grid 와 완전히 같게 맞춘다.
+- 새 코드는 린트 경고를 늘리지 않는다. 기존 경고(`no-non-null-assertion`, `no-explicit-any`, `no-unused-vars`)는 ui-grid 와 같은 `warn` 이며 요청 없이 일괄 정리하지 않는다.
 - 줄바꿈은 LF(`.gitattributes`, `.editorconfig`). `*.bat` 만 CRLF.
 - 가져오기: `@/`(src), `@t/`(src/types) 별칭과 상대 경로가 혼용된다. 주변 코드를 따른다. 별칭을 바꾸면 `tsconfig.json` 과 `vite.common.mjs` 를 함께 고친다.
 - `format` · `parser` 는 default export, `DateTimePicker` 등은 named export 다. 공개 export 형태를 바꾸지 않는다.
@@ -121,6 +123,8 @@ docs/ / dist/                생성 문서 · 배포 산출물 (직접 수정 �
 | `npm run build` | `scripts/build.mjs`: `dist` 초기화 → 선언 파일 + production/development 번들 병렬 → unmin 병합 · 정리 → 데모 HTML 복사 |
 | `npm run build:escjs` / `build:umd` | ESM·CJS / UMD 번들만 (production + development) |
 | `npm run build:tsc` | 타입 선언 생성 (`dist/`) |
+| `npm run lint` | ESLint (`src/**/*.ts`). 오류가 있으면 종료 코드 1, 경고는 통과 |
+| `npm run typecheck` | `tsc --noEmit` 소스 타입 검사 (산출물 없음) |
 | `npm run test:types` | `tests/types.ts` 타입 계약 검사 (`tsc --noEmit`, 산출물 없음) |
 | `npm run test:package` | `dist` 산출물 · exports · UMD 등록 · 배너 · 소스맵 검증. **먼저 build 가 필요** |
 | `node --test tests/*.test.mjs` | 단위 · 브라우저 테스트. `dist/` 를 import 하므로 **먼저 build 가 필요**하고 `browser.test.mjs` 는 Playwright 크로미움이 필요하다 |

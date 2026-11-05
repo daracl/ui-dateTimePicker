@@ -56,21 +56,21 @@ Daracl.dateTimePicker.setDefaultFormat({
     , datetime: "YYYY.MM.DD HH:mm"
 })
 
+// 기본 언어는 한국어입니다. 다른 언어는 setMessage(전역) 또는 create 의 세 번째 인자(인스턴스)로 바꿉니다.
 Daracl.dateTimePicker.setMessage({
-    year: '년',
-    month: '월',
-    day: '일',
-    am: "오전",
-    pm: "오후",
-    today: '오늘',
-    ok: '선택',
+    am: 'AM',
+    pm: 'PM',
+    today: 'Today',
+    ok: 'Ok',
+    clear: 'Clear',
+    cancel: 'Cancel',
     months: {
-    full: ["1월", "2월", "3월", "4월", "5월", "6월", "7월", "8월", "9월", "10월", "11월", "12월"],
-    abbr: ["1월", "2월", "3월", "4월", "5월", "6월", "7월", "8월", "9월", "10월", "11월", "12월"]
+        full: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
+        abbr: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
     },
     weeks: {
-    full: ["일요일", "월요일", "화요일", "수요일", "목요일", "금요일", "토요일"],
-    abbr: ["일", "월", "화", "수", "목", "금", "토"]
+        full: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
+        abbr: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
     },
 });
 
@@ -157,7 +157,7 @@ var aaa = Daracl.dateTimePicker.create('#date', {
 | weekStartDay| start day        | 0            |  0:Sun, 1:Mon, 2:Tue, 3:Wed, 4:Thu, 5:Fri, 6:Sat |
 | initialDate | initial date      | new Date()   |                                   |
 | mode        | view mode         | date         | year, month, date, datetime, time |
-| enableTodayBtn        | enable today button       | false         | false, true|
+| enableTodayBtn        | show the Today button. It only moves the calendar to today (it does not select a date or range, and fires no select events). Hidden when today cannot be selected (`minDate` / `maxDate` / disabled dates or weekdays) | false         | false, true|
 | showMonthAfterYear | show month after           | false | true ,false      |
 | format      | date format       | 'YYYY-MM-DD' |                                   |
 | zIndex      | css z-index       | 1000         |                                   |
@@ -174,21 +174,30 @@ var aaa = Daracl.dateTimePicker.create('#date', {
 
 # Language
 
-| key    | Desc          | Default                                                                                                                    |
-| ------ | ------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| year   | year          | Year                                                                                                                       |
-| month  | Month         | Month                                                                                                                      |
-| day    | Day           | Day                                                                                                                        |
-| am     | AM            | AM                                                                                                                         |
-| pm     | PM            | PM                                                                                                                         |
-| today  | Today button  | Today                                                                                                                      |
-| ok     | H:M Ok button | Ok                                                                                                                         |
-| months | Months        |                                                                                                                            |
-|        | full          | ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"] |
-|        | abbr          | ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']                                       |
-| weeks  | weeks         |                                                                                                                            |
-|        | full          | ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]                                             |
-|        | abbr          | ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]                                                                          |
+기본 언어는 **한국어**입니다. 아래는 기본값이며, 값을 지정한 키만 바뀝니다(`months` · `weeks`는 일부만 지정해도 됩니다). `{days}` · `{period}` · `{n}`은 값으로 치환됩니다.
+
+| key | 설명 | 기본값 |
+| --- | --- | --- |
+| year, month, day | 년 · 월 · 일 | `년`, `월`, `일` |
+| am, pm | 오전 · 오후 | `오전`, `오후` |
+| today | 오늘 버튼 | `오늘` |
+| ok | 시간 선택 · 기간 확인 버튼 | `확인` |
+| clear, cancel | 기간 초기화 · 취소 버튼 | `초기화`, `취소` |
+| time | 시간 | `시간` |
+| rangeStart, rangeEnd | 시작 · 종료 라벨 | `시작`, `종료` |
+| selectRangeStart, selectRangeEnd | 선택 안내 | `시작일을 선택하세요`, `종료일을 선택하세요` |
+| rangeMin | 최소 기간 위반(`{days}`) | `최소 {days}일 이상 선택하세요.` |
+| rangeMax | 최대 일 수 위반(`{days}`) | `최대 {days}일까지 선택할 수 있습니다.` |
+| rangeMaxPeriod | 최대 기간(주 · 개월 · 년) 위반(`{period}`) | `최대 {period}까지 선택할 수 있습니다.` |
+| periodWeeks, periodMonths, periodYears | 기간 단위(`{n}`) | `{n}주`, `{n}개월`, `{n}년` |
+| rangeDisabled | 비활성 날짜 포함 | `선택할 수 없는 날짜가 포함되어 있습니다.` |
+| rangeTimeOrder | 종료 시간이 시작 시간보다 빠름 | `종료 시간은 시작 시간보다 늦어야 합니다.` |
+| periodPlaceholder, period1w, period1m, period3m, period6m, period1y | 기간 프리셋 셀렉트박스 | `기간 선택`, `일주일`, `1개월`, `3개월`, `6개월`, `1년` |
+| months.full, months.abbr | 월 이름 | `1월` ~ `12월` |
+| weeks.full | 요일 이름 | `일요일` ~ `토요일` |
+| weeks.abbr | 요일 약어 | `일` ~ `토` |
+
+> 포맷 토큰 `MMMM` · `MMM` · `dddd` · `ddd` · `a` · `A`도 이 메시지를 사용하므로 기본 출력이 한국어입니다. 예: `format(date, 'YYYY년 MMMM D일 dddd')` → `2026년 10월 29일 목요일`. 영어 이름이 필요하면 위 예시처럼 `setMessage`로 바꾸세요.
 
 
 # Theme
@@ -241,7 +250,9 @@ const dateTimeRange = Daracl.dateTimePicker.create('#dateTimeRange', {
   selectRangeStart: '시작일을 선택하세요', selectRangeEnd: '종료일을 선택하세요',
   rangeMin: '최소 {days}일 이상 선택하세요.', rangeMax: '최대 {days}일까지 선택할 수 있습니다.', // minRange / maxRange 를 벗어나면 status 에 표시
   rangeDisabled: '선택할 수 없는 날짜가 포함되어 있습니다.', // 비활성 날짜 / 요일이 기간 안에 있을 때
-  rangeTimeOrder: '종료 시간은 시작 시간보다 늦어야 합니다.', // 같은 날짜에서 종료 시간이 시작 시간보다 빠를 때
+  rangeTimeOrder: '종료 시간은 시작 시간보다 늦어야 합니다.',
+  rangeMaxPeriod: '최대 {period}까지 선택할 수 있습니다.', periodWeeks: '{n}주', periodMonths: '{n}개월', periodYears: '{n}년', // maxRange 가 '2W' · '3M' · '1Y' 일 때
+  periodPlaceholder: '기간 선택', period1w: '일주일', period1m: '1개월', period3m: '3개월', period6m: '6개월', period1y: '1년', // 기간 프리셋 셀렉트박스 // 같은 날짜에서 종료 시간이 시작 시간보다 빠를 때
   ok: '확인'
 });
 ```
@@ -259,7 +270,9 @@ const dateTimeRange = Daracl.dateTimePicker.create('#dateTimeRange', {
 | `responsiveOptions.mobileMonths` | `1` | 모바일 월 수 |
 | `responsiveOptions.desktopMonths` | `numberOfMonths` | 데스크톱 월 수, 지정 시 `numberOfMonths`보다 우선 |
 | `startDate`, `endDate` | `null` | `Date` 또는 기존 `format`에 맞춘 문자열. 둘 중 하나만 지정하면 같은 값으로 양쪽을 채웁니다(`minRange`, `allowSameDate` 등 규칙에 맞지 않으면 채우지 않음) |
-| `minRange`, `maxRange` | `0`, `null` | 양 끝을 포함한 최소/최대 달력 일수. 0/null은 제한 없음 |
+| `minRange` | `0` | 양 끝을 포함한 최소 달력 일수. 0은 제한 없음 |
+| `maxRange` | `null` | 선택할 수 있는 최대 기간. 숫자나 단위 없는 문자열(`30`, `'30'`, `'30D'`)은 양 끝을 포함한 **일 수**, `'2W'`(주) · `'3M'`(개월) · `'1Y'`(년)은 **달력 단위**입니다. `'3M'`은 종료일에서 3개월을 뺀 날짜(말일은 보정)가 시작일보다 늦지 않아야 합니다. 예: 시작 11/5이면 2/5까지. null은 제한 없음, 올바르지 않은 값은 `RangeError` |
+| `periodSelect` | `true` | range에서 기간 프리셋 셀렉트박스(1주 · 1개월 · 3개월 · 6개월 · 1년)를 표시합니다. 입력창 **안쪽 오른쪽**에 겹쳐 입력창과 하나의 컨트롤처럼 보이고, `inline`은 달력 위에 들어갑니다. 입력창을 `<ddtp-period-field>`로 감싸므로 DOM 위치를 건드리고 싶지 않으면 `false`로 끄세요 |
 | `allowSameDate` | `true` | 동일 날짜 허용. datetime도 날짜 기준이며 시간 순서는 별도 검사 |
 | `allowReverse` | `true` | 시작일보다 이른 날을 고르면 먼저 고른 날을 종료일, 새로 고른 날을 시작일로 교환합니다. `false`이면 선택을 거부합니다 |
 | `resetRangeOnStart` | `true` | 완료 후 새 시작일 선택 시 종료일 제거. false는 유효한 종료일을 유지하고, 무효하면 제거 |
@@ -278,6 +291,39 @@ Daracl.dateTimePicker.create('#responsiveRange', {
   responsiveOptions: { breakpoint: 768, mobileMonths: 1, desktopMonths: 2 }
 });
 // 항상 2개월을 표시하려면 responsive: false.
+```
+
+### 기간 프리셋 셀렉트박스
+
+`selectionMode: 'range'`이면 입력창 **안쪽 오른쪽**에 `<select class="ddtp-period-select">`가 겹쳐서 입력창과 하나의 컨트롤처럼 보입니다. 라이브러리가 입력창을 `<ddtp-period-field>`(일반 태그가 아니라 호스트 CSS의 `span`/`div` 규칙에 걸리지 않습니다)로 감싸고, 글자가 셀렉트 밑으로 들어가지 않도록 입력창의 오른쪽 안쪽 여백만 늘립니다. `destroy()`하면 입력창이 원래 자리로 돌아오고 여백도 복원됩니다. 항목을 고르면 **이미 선택한 종료일은 그대로 두고, 시작일을 `종료일 − 기간`으로 채운 뒤 바로 확정**합니다(셀렉트박스는 팝업 밖에 있어 확인 버튼을 누를 수 없기 때문입니다). 종료일은 이렇게 정합니다: ① **선택한 종료일이 있으면** 그 날짜 ② **시작일만 고른 상태면 그 시작일을 종료일로 삼아** 거슬러 올라가기(시작일 11/12 + 1개월 → 10/12 ~ 11/12) ③ **아무것도 선택하지 않았으면 오늘**.
+
+| 항목 | 종료일이 2026-10-20일 때 (시작일만 고른 경우는 그 시작일이 20일일 때도 같음) | 아무것도 선택하지 않고 오늘이 2026-11-05일 때 |
+| --- | --- | --- |
+| 1주 | 2026-10-13 ~ 2026-10-20 | 2026-10-29 ~ 2026-11-05 |
+| 1개월 | 2026-09-20 ~ 2026-10-20 | 2026-10-05 ~ 2026-11-05 |
+| 3개월 | 2026-07-20 ~ 2026-10-20 | 2026-08-05 ~ 2026-11-05 |
+| 6개월 | 2026-04-20 ~ 2026-10-20 | 2026-05-05 ~ 2026-11-05 |
+| 1년 | 2025-10-20 ~ 2026-10-20 | 2025-11-05 ~ 2026-11-05 |
+
+- 시작일만 고른 상태에서 프리셋을 고르면 **고른 날짜가 시작일이 아니라 종료일**이 됩니다. `onRangeStart`는 날짜를 고른 순간에만 호출되고, 프리셋은 `onRangeChange` · `onRangeComplete`를 호출합니다.
+- 월 · 연 단위는 말일을 넘지 않게 보정합니다(5/31의 1개월 → 4/30 ~ 5/31).
+- **달력 위치**: 프리셋을 적용한 뒤 왼쪽 패널은 **시작일의 달**, 오른쪽(마지막) 패널은 **종료일의 달**을 보여 줍니다. 종료일이 12월이고 6개월이면 `6월 | 12월`이며, 두 달이 연속된 패널에 들어가는 거리면 연속된 달(`11월 | 12월`)입니다. 시작일 · 종료일 달이 이미 보이고 있으면 달력을 옮기지 않습니다. 패널이 3개 이상이면 첫 패널은 시작일의 달, 마지막은 종료일의 달이고 가운데는 시작일 다음 달들입니다. 한 달만 보이는 화면에서는 종료일의 달을 보여 줍니다. 이전 / 다음 달 버튼을 누르면 다시 연속된 달이 됩니다.
+- 항목별 숨김 · 비활성 판단과 선택 표시도 **현재 종료일 기준**입니다. 종료일을 바꾸면 항목 상태도 달라질 수 있습니다(예: `minDate`가 6월이면 종료일이 10월일 때는 6개월이 비활성, 12월일 때는 선택 가능). 숫자 `maxRange`(일 수)는 종료일의 달 길이에 따라 1개월 항목이 보였다 숨었다 할 수 있습니다.
+- **`maxRange`를 넘는 항목은 목록에서 숨깁니다.** `maxRange: '6M'`이면 1년이 보이지 않고, `'3M'`이면 6개월과 1년이 보이지 않습니다. 고를 수 있는 항목이 하나도 없으면 셀렉트박스 자체가 사라집니다. 숫자는 **일 수**이므로 `maxRange: 6`(6일)은 모든 항목이 넘어서 숨겨집니다. 6개월은 `'6M'`입니다.
+- `minRange`, 비활성 날짜(`disabledDates`, `disabledWeekdays`), `minDate`, `maxDate`에 맞지 않는 항목은 **비활성**으로 표시합니다. 날짜에 따라 달라지는 규칙이라 항목은 남겨 둡니다.
+- 직접 기간을 바꾸거나 초기화하면 선택이 해제되고, 현재 기간이 `종료일 − 기간`과 같으면 그 항목이 선택된 것으로 표시됩니다.
+- `datetime`에서는 시작일에 시작 시간 그룹의 값을 쓰고, 이미 선택한 종료일의 날짜와 시간은 그대로 둡니다. 종료일이 새로 만들어지는 경우(시작일을 종료일로 삼거나 오늘)에는 날짜는 그대로 두고 **종료 시간 그룹**의 시간을 씁니다(시작일을 고를 때 붙어 있던 시작 시간은 쓰이지 않습니다). `beforeSelectRange`나 `onSelect`가 `false`를 반환하면 선택이 취소되고 셀렉트박스도 되돌아갑니다.
+- 문구는 메시지 키로 바꿉니다: `periodPlaceholder`, `period1w`, `period1m`, `period3m`, `period6m`, `period1y`. 단위 maxRange 안내는 `rangeMaxPeriod`(`{period}`)와 `periodWeeks` · `periodMonths` · `periodYears`(`{n}`)를 씁니다.
+
+```javascript
+Daracl.dateTimePicker.create('#period', {
+  selectionMode: 'range',
+  maxRange: '3M',        // 최대 3개월 (6개월 · 1년 항목은 목록에서 숨김)
+  // periodSelect: false // 셀렉트박스를 쓰지 않으려면 (입력창도 감싸지 않음)
+}, {
+  periodPlaceholder: '기간 선택', period1w: '일주일', period1m: '1개월', period3m: '3개월', period6m: '6개월', period1y: '1년',
+  rangeMaxPeriod: '최대 {period}까지 선택할 수 있습니다.', periodWeeks: '{n}주', periodMonths: '{n}개월', periodYears: '{n}년'
+});
 ```
 
 ### 선택 동작

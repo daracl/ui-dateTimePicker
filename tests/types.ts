@@ -24,5 +24,9 @@ const rangePicker = DateTimePicker.create('#range', {
 }, { clear: '초기화', cancel: '취소' });
 const rangeState: DateRangeState = rangePicker.getRangeState();
 rangePicker.getRange(); rangePicker.confirmRange(); rangePicker.cancelRange(); rangePicker.clearRange();
+DateTimePicker.create('#range', { selectionMode: 'range', maxRange: '3M', periodSelect: false }, { period1m: '1개월', rangeMaxPeriod: '최대 {period}', periodMonths: '{n}개월' });
+DateTimePicker.create('#range', { selectionMode: 'range', maxRange: 30 });
+// @ts-expect-error maxRange 는 숫자 또는 문자열만 허용합니다.
+DateTimePicker.create('#range', { selectionMode: 'range', maxRange: true });
 // @ts-expect-error 선택 방식은 single 또는 range만 허용합니다.
 DateTimePicker.create('#range', { selectionMode: 'multiple' });

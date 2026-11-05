@@ -2,14 +2,14 @@ import Lanauage, { Language } from "../Lanauage";
 import { MAX_CHAR_LENGTH, EXPRESSIONS_FORMAT } from "@/constants";
 import { leftPad } from "@daracl/core";
 
-export default (date: Date, format: string = "YYYY-MM-DD", language: Language = Lanauage) => {
+export default (date: Date, format = "YYYY-MM-DD", language: Language = Lanauage) => {
   if (!(date instanceof Date) || !Number.isFinite(date.getTime())) return "";
   format = format || "YYYY-MM-DD";
   const len = format.length;
 
-  let result = [];
+  const result = [];
   for (let i = 0; i < len; ) {
-    let minLen = Math.min(MAX_CHAR_LENGTH, len - i);
+    const minLen = Math.min(MAX_CHAR_LENGTH, len - i);
     let j = minLen;
     for (; j > 0; j--) {
       const v = format.substring(i, i + j);

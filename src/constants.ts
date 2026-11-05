@@ -2,7 +2,7 @@ export const EXPRESSIONS_FORMAT = ["YY", "YYYY", "MMMM", "MMM", "MM", "M", "dddd
 
 export let MAX_CHAR_LENGTH = 0;
 
-export let DEFAULT_FORMAT = {
+export const DEFAULT_FORMAT = {
   year: "YYYY",
   month: "YYYY-MM",
   date: "YYYY-MM-DD",

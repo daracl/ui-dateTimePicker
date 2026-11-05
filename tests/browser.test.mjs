@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test, before, after, beforeEach, afterEach } from 'node:test';
 import { chromium } from 'playwright';
 import { fileURLToPath } from 'node:url';
+import { ENGLISH } from './english.mjs';
 
 let browser, page, errors;
 before(async () => { browser = await chromium.launch({ headless: true }); });
@@ -14,6 +15,8 @@ beforeEach(async () => {
   await page.setContent('<input id="input"><div id="calendar" class="original"><b>original</b></div><div id="other"></div>');
   await page.addStyleTag({ path: fileURLToPath(new URL('../dist/daracl.datetimepicker.min.css', import.meta.url)) });
   await page.addScriptTag({ path: fileURLToPath(new URL('../dist/daracl.datetimepicker.min.umd.js', import.meta.url)) });
+  // 기본 언어는 한국어다. 이 파일의 기존 테스트는 영어 문구를 기대하므로 영어 메시지를 적용한다. (한국어 기본값은 defaults.test.mjs)
+  await page.evaluate(message => Daracl.dateTimePicker.setMessage(message), ENGLISH);
 });
 afterEach(async () => { await page.close(); assert.deepEqual(errors, []); });
 
@@ -239,13 +242,29 @@ test('invalid bounds fail clearly, initial values clamp, and undefined options u
   assert.equal(result.value, '2026-12-10');
 });
 
-test('Today uses the real date and time input values clamp before padding', async () => {
+test('Today only moves the calendar to the current date and does not select anything; time input values clamp before padding', async () => {
+  await page.clock.setFixedTime('2026-11-05T12:00:00-05:00');
+  // 레이어: 입력값 · onSelect · 닫힘은 그대로이고, 달력만 오늘이 있는 달로 이동한다.
   await page.evaluate(() => {
-    window.today = Daracl.dateTimePicker.format(new Date());
-    window.picker = Daracl.dateTimePicker.create('#calendar', { inline: true, initialDate: '2000-01-01', enableTodayBtn: true });
+    window.log = [];
+    window.picker = Daracl.dateTimePicker.create('#input', { enableTodayBtn: true, initialDate: '2027-02-10', onSelect: value => log.push('select:' + value), onClose: () => { log.push('close'); } });
   });
+  await page.locator('#input').click();
+  assert.equal(await page.locator('.daracl-datetime-wrapper.show .ddtp-header-year').textContent(), '2027');
+  await page.locator('.daracl-datetime-wrapper.show button.ddtp-today').click();
+  assert.equal(await page.locator('.daracl-datetime-wrapper.show .ddtp-header-year').textContent(), '2026');
+  assert.equal(await page.locator('.daracl-datetime-wrapper.show .ddtp-header-month').textContent(), 'November');
+  assert.equal(await page.locator('.daracl-datetime-wrapper.show .ddtp-day.ddtp-today').count(), 1);
+  assert.equal(await page.locator('#input').inputValue(), '2027-02-10');
+  assert.deepEqual(await page.evaluate(() => log), []);
+  assert.equal(await page.locator('.daracl-datetime-wrapper.show').count(), 1);
+  await page.evaluate(() => { picker.destroy(); });
+  // 월 보기에서도 날짜 보기로 돌아온다.
+  await page.evaluate(() => { window.picker = Daracl.dateTimePicker.create('#calendar', { inline: true, initialDate: '2000-01-01', enableTodayBtn: true }); });
+  await page.evaluate(() => { picker.viewMode = 'month'; });
   await page.locator('#calendar button.ddtp-today').click();
-  assert.equal(await page.evaluate(() => picker.getDateValue()), await page.evaluate(() => today));
+  assert.equal(await page.locator('#calendar .ddtp-datetime').getAttribute('view-mode'), 'date');
+  assert.equal(await page.locator('#calendar .ddtp-header-year').textContent(), '2026');
   await page.evaluate(() => { picker.destroy(); window.picker = Daracl.dateTimePicker.create('#calendar', { inline: true, mode: 'time' }); });
   await page.locator('#calendar .ddtp-hour').fill('100');
   await page.locator('#calendar .ddtp-minute').fill('-5');

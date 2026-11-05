@@ -8,6 +8,8 @@
       "Bash(npm run docs:gen)",
       "Bash(npm run test)",
       "Bash(npm run test:types)",
+      "Bash(npm run lint)",
+      "Bash(npm run typecheck)",
       "Bash(npm run test:package)",
       "Bash(npm run audit:security)",
       "Bash(npm run pwtest)",

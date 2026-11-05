@@ -28,6 +28,8 @@
 | `npm run build:umd` | UMD 빌드 |
 | `npm run build:tsc` | 타입 선언(.d.ts) 생성 |
 | `npm run test` | `build` → `node --test tests/*.test.mjs` → `test:types` → `test:package` 전체 (`dist/` 를 지우고 다시 만든다) |
+| `npm run lint` | ESLint (`src/**/*.ts`, ui-grid 와 같은 규칙). 오류만 실패, 경고는 통과 |
+| `npm run typecheck` | `tsc --noEmit` 소스 타입 검사 |
 | `npm run test:types` | 타입 계약 검사 (`tests/types.ts`, 산출물 없음) |
 | `npm run test:package` | `dist` 산출물 · exports · UMD 등록 검증 (먼저 build 필요) |
 | `npm run pwtest` | `playwright test` — 설정 · spec 이 없어 준비된 E2E 가 아니다 |
@@ -71,5 +73,6 @@
 - 전역 이벤트 리스너는 `src/util/popupEvents.ts` 를 통해서만 추가한다. 새 리스너 · 타이머는 `destroy()` / `hide()` 에서 해제한다.
 - 이 프로젝트의 `.prettierrc` 와 실제 소스 스타일(파일마다 따옴표 · 세미콜론이 다르다)이 어긋난다. 수정하는 파일의 주변 스타일에 맞추고, 파일 전체를 재포맷하지 않는다. `package.json` 의 `prettier` 키와 `.prettierrc` 의 불일치는 고치기 전에 사용자에게 묻는다.
 - `style/*.css`, `style/*.map`, `bundle-report*.html`, `dist/`, `docs/` 는 생성물이다. 미커밋 변경(기간 선택 기능 작업 중)을 보존한다.
-- 검증 순서: `npm run test:types` → (`dist` 를 지워도 되는 경우) `npm test` 또는 임시 사본 빌드 → `uitest/` 수동 확인(light / dark). 하지 못한 것은 보고에 적는다.
+- ESLint 는 ui-grid 규칙과 같되 `quotes` 만 `warn` 이다(기존 큰따옴표 309건). 요청 없이 `--fix` 로 일괄 변환하지 않는다. 새 코드는 경고를 늘리지 않는다. 자세한 내용은 AGENTS.md.
+- 검증 순서: `npm run lint` → `npm run test:types` → (`dist` 를 지워도 되는 경우) `npm test` 또는 임시 사본 빌드 → `uitest/` 수동 확인(light / dark). 하지 못한 것은 보고에 적는다.
 <!-- ui-common-harness:custom-end -->

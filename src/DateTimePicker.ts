@@ -1,4 +1,4 @@
-import { calendarDay, cloneDate, rangeResult } from './util/range';
+import { addPeriod, calendarDay, cloneDate, parseRangePeriod, rangeResult, RangePeriod } from './util/range';
 import { DateTimePickerOptions, DateRangeResult, DateRangeState } from "./types/DateTimePickerOptions";
 import { MessageOptions } from "./types/Message";
 import format from "./format";
@@ -17,7 +17,7 @@ let DEFAULT_OPTIONS: DateTimePickerOptions = {
   startDate: null, endDate: null, minRange: 0, maxRange: null,
   allowSameDate: true, allowReverse: true, resetRangeOnStart: true,
   confirmButton: false, clearButton: true, showRangeHighlight: true,
-  showRangePreview: true, showOutsideDays: true,
+  showRangePreview: true, showOutsideDays: true, periodSelect: true,
   inline: false, // layer or innerhtml
   weekStartDay: 0,
   initialDate: "",
@@ -63,6 +63,16 @@ let daraDatetimeIdx = 0;
 // 요소별 현재 인스턴스. 같은 요소에 다시 생성하면 이전 인스턴스를 destroy 한다.
 const INSTANCES = new WeakMap<HTMLElement, DateTimePicker>();
 
+// 기간 프리셋(셀렉트박스). 키는 메시지 키(period1w, period1m ...)와 연결된다. 오늘을 종료일로 두고 시작일은 기간만큼 뺀다.
+interface PeriodPreset { key: string; period: RangePeriod }
+const PERIOD_PRESETS: PeriodPreset[] = [
+  { key: '1w', period: { value: 1, unit: 'W' } },
+  { key: '1m', period: { value: 1, unit: 'M' } },
+  { key: '3m', period: { value: 3, unit: 'M' } },
+  { key: '6m', period: { value: 6, unit: 'M' } },
+  { key: '1y', period: { value: 1, unit: 'Y' } },
+];
+
 /**
  * date timepicker
  *
@@ -78,10 +88,19 @@ export class DateTimePicker {
   private committedRange: DateRangeResult = rangeResult(null, null);
   private hasCommittedRange = false;
   private rangeError = '';
+  // maxRange 를 해석한 값. 숫자 · 단위 없는 문자열은 일, 'W' · 'M' · 'Y' 는 시작일 기준 달력 단위다.
+  private maxPeriod: RangePeriod | null = null;
+  private periodSelectEl: HTMLSelectElement | null = null;
+  // 입력창을 감싸는 요소와, 감싸기 전에 입력창에 지정되어 있던 오른쪽 여백(복원용)
+  private periodField: HTMLElement | null = null;
+  private periodInputPadding = '';
+  private periodKey = '';
   // 기간 선택 달력의 칸 색인. 날짜 계산과 고정 속성(aria-label 등)은 그릴 때 한 번만 처리하고, paintRange 는 바뀐 값만 DOM 에 쓴다.
   private rangeCells: { el: Element; day: number; flags: number; selected: string }[] = [];
   // 종료일 선택이 거부된 날짜. 같은 날짜를 다시 누르면 그 날짜를 새 시작일로 바꾼다.
   private rangeRejectedDay: number | null = null;
+  // 기간이 길어 시작일 · 종료일 달이 연속된 패널에 모두 들어가지 않을 때, 마지막 패널에 보여 줄 종료일의 달(year * 12 + month). null 이면 패널은 연속된 달이다.
+  private rangeEndMonth: number | null = null;
   private rangeMedia?: MediaQueryList;
   private disabledRangeDays = new Set<number>();
   private readonly rangeResize = () => { if (!this.destroyed) { this.refresh(false); this.measurePosition()?.(); } };
@@ -99,7 +118,7 @@ export class DateTimePicker {
 
   private todayDate: string;
 
-  private isInput: boolean = false;
+  private isInput = false;
 
   private isVisible = false;
   private positionKey = '';
@@ -123,10 +142,10 @@ export class DateTimePicker {
 
   private minDate: number;
   private maxDate: number;
-  private minYear: number = -1;
-  private maxYear: number = -1;
-  private minMonth: number = -1;
-  private maxMonth: number = -1;
+  private minYear = -1;
+  private maxYear = -1;
+  private minMonth = -1;
+  private maxMonth = -1;
 
   // 요일 순서.
   private dayOrder: number[] = [0, 1, 2, 3, 4, 5, 6];
@@ -227,6 +246,7 @@ export class DateTimePicker {
 
     this.createDatetimeTemplate();
     if (this.isRange) this.initRangeTemplate();
+    if (this.isRange && this.options.periodSelect) this.initPeriodSelect();
 
     if (this.isTimeMode()) {
       this.hourInputEle = this.datetimeElement.querySelector(".ddtp-hour") as HTMLInputElement;
@@ -241,6 +261,7 @@ export class DateTimePicker {
     this.initHeaderEvent();
 
     this.initDateEvent();
+    this.syncTodayButton();
 
     this.initTimeEvent();
     if (this.isRange) {
@@ -259,7 +280,7 @@ export class DateTimePicker {
     }
 
     for (let i = 0; i < 7; i++) {
-      let day = weekStartDay + i;
+      const day = weekStartDay + i;
 
       this.dayOrder[i] = day < 7 ? day : day - 7;
     }
@@ -423,18 +444,32 @@ export class DateTimePicker {
     });
 
     // today click
-    this.datetimeElement.querySelector("button.ddtp-today")?.addEventListener("click", (e: Event) => {
+    this.datetimeElement.querySelector("button.ddtp-today")?.addEventListener("click", () => {
+      // "오늘" 버튼은 날짜나 기간을 선택하지 않고 달력을 오늘 날짜로 보여 주기만 한다. (입력값 · 선택 상태 · onSelect / onRange* 이벤트 · 닫힘은 그대로다)
       const initDate = new DaraDate(new Date());
+      if (this.isRange) { this.goToToday(initDate); return; }
       if (this.isDayDisabled(initDate)) return;
-      if (this.isRange) { this.selectRangeDate(new Date(initDate.getTime()), e); return; }
-      const previous = this.currentDate.clone();
       this.currentDate.setDate(1);
       this.currentDate.setYear(initDate.getYear());
       this.currentDate.setMonth(initDate.getMonth() - 1);
       this.currentDate.setDate(initDate.getDate());
       this.changeViewMode(this.initMode);
-      if (!this.isTimeMode() && this.dateChangeEvent(e) === false) this.currentDate = previous;
     });
+  }
+
+  // 오늘을 선택할 수 없으면(minDate · maxDate · 비활성 날짜 / 요일) "오늘" 버튼을 숨긴다.
+  private syncTodayButton() {
+    const button = this.datetimeElement.querySelector('button.ddtp-today') as HTMLButtonElement | null;
+    if (!button) return;
+    const hidden = this.isDayDisabled(new DaraDate(new Date()));
+    if (button.hidden !== hidden) button.hidden = hidden;
+  }
+
+  // 기간 선택의 "오늘" 버튼: 달력만 오늘의 달로 되돌린다. (날짜보기, 첫 패널이 오늘의 달인 연속된 달) 기간 · 시작일 · 종료일은 선택하거나 바꾸지 않고 이벤트도 호출하지 않는다.
+  private goToToday(today: DaraDate) {
+    this.rangeEndMonth = null;
+    this.currentDate = this.currentDate.clone().setDate(1).setYear(today.getYear()).setMonth(today.getMonth() - 1);
+    this.changeViewMode(this.initMode);
   }
 
   private isTimeMode(): boolean {
@@ -459,7 +494,7 @@ export class DateTimePicker {
     this.timeEventBound = true;
     if (this.isRange) { this.initRangeTimeEvent(); return; }
 
-    let hh = this.currentDate.format("HH");
+    const hh = this.currentDate.format("HH");
 
     const datetimeElement = this.datetimeElement; 
 
@@ -471,7 +506,7 @@ export class DateTimePicker {
     hourInputEle.addEventListener("input", (e: Event) => {
       const targetElement = e.target as HTMLInputElement;
 
-      let val = this.getTimeNumberValue(targetElement.value);
+      const val = this.getTimeNumberValue(targetElement.value);
 
       let addVal = leftPad(Math.min(val, 23), 2);
       
@@ -488,7 +523,7 @@ export class DateTimePicker {
       hourInputEle.value = leftPadClamp(targetElement.value,2,'0');
     });
 
-    let mm = this.currentDate.format("mm");
+    const mm = this.currentDate.format("mm");
     const minuteInputEle = datetimeElement.querySelector(".ddtp-minute") as HTMLInputElement;
     const minuteRangeEle = datetimeElement.querySelector(".ddtp-minute-range") as HTMLInputElement;
 
@@ -497,7 +532,7 @@ export class DateTimePicker {
 
     minuteInputEle.addEventListener("input", (e: Event) => {
       const targetElement = e.target as HTMLInputElement;
-      let val = this.getTimeNumberValue(targetElement.value);
+      const val = this.getTimeNumberValue(targetElement.value);
       let addVal = leftPad(Math.min(val, 59), 2);
 
       if(parseInt(addVal,10)>59){
@@ -528,6 +563,7 @@ export class DateTimePicker {
    */
   public moveDate(moveMode: string, e: Event) {
     if (this._viewMode === DateViewMode.date || this._viewMode === DateViewMode.datetime) {
+      this.rangeEndMonth = null;
       this.currentDate.setDate(1);
       this.currentDate.addMonth("prev" === moveMode ? -1 : 1);
       this.dayDraw();
@@ -576,6 +612,8 @@ export class DateTimePicker {
     if (this.destroyed || this.isVisible) {
       return;
     }
+    this.syncTodayButton(); // 날짜가 바뀌었을 수 있으므로 열 때마다 다시 판단한다.
+    this.layoutPeriodSelect();
     const entered = this.isRange ? null : parser((this.targetElement as HTMLInputElement).value, this.dateFormat, this.language);
     if (entered && !this.isDayDisabled(new DaraDate(entered))) {
       this.currentDate = new DaraDate(entered, this.language);
@@ -676,6 +714,8 @@ export class DateTimePicker {
     this.rangeMedia?.removeEventListener('change', this.rangeResize);
     this.targetElement.removeEventListener('click', this._targetClickEvent);
     if (INSTANCES.get(this.targetElement) === this) INSTANCES.delete(this.targetElement);
+    this.unwrapPeriodSelect();
+    this.periodSelectEl?.remove();
     if (this.options.inline) {
       this.targetElement.className = this.originalClassName;
       this.targetElement.innerHTML = this.originalContent;
@@ -693,8 +733,11 @@ export class DateTimePicker {
    */
   private _documentClickEvent = (e: Event) => {
     // 클릭한 칸이 재렌더링으로 DOM 에서 분리되어도 이벤트 경로로 팝업 내부 클릭인지 판단한다.
-    const inside = e.composedPath().includes(this.datetimeElement) || closestElement(e.target as HTMLElement, this.datetimeElement);
-    if (this.isVisible && e.target != this.targetElement && !inside) {
+    const path = e.composedPath();
+    const inside = path.includes(this.datetimeElement) || closestElement(e.target as HTMLElement, this.datetimeElement);
+    // 입력창 옆(안쪽)의 기간 프리셋 셀렉트박스를 누르는 것은 바깥 클릭이 아니다. 항목을 고르면 applyPeriod 가 확정하면서 autoClose 에 따라 닫는다.
+    const onPeriodSelect = !!this.periodSelectEl && path.includes(this.periodSelectEl);
+    if (this.isVisible && e.target != this.targetElement && !inside && !onPeriodSelect) {
       this.hide();
     }
   };
@@ -779,7 +822,7 @@ export class DateTimePicker {
   private createDatetimeTemplate() {
     const showMonthAfterYear = this.options.showMonthAfterYear;
 
-    let datetimeTemplate = `<div class="ddtp-datetime ${this.options.isRTL ? "rtl" : ""}" view-mode="${this._viewMode}">
+    const datetimeTemplate = `<div class="ddtp-datetime ${this.options.isRTL ? "rtl" : ""}" view-mode="${this._viewMode}">
 			<div class="ddtp-header">
                 <span class="${showMonthAfterYear ? "ddtp-header-year" : "ddtp-header-month"}"></span>
                 <span class="${showMonthAfterYear ? "ddtp-header-month" : "ddtp-header-year"}"></span>
@@ -1016,9 +1059,12 @@ export class DateTimePicker {
       const container = this.datetimeElement.querySelector('.ddtp-range-months') as HTMLElement;
       const prototype = container.querySelector('table')!.cloneNode(true) as HTMLTableElement;
       container.innerHTML = '';
-      for (let i = 0; i < this.rangeMonthCount(); i++) {
+      const count = this.rangeMonthCount(), firstMonth = this.currentDate.getYear() * 12 + this.currentDate.getMonth() - 1;
+      // 첫 패널부터 연속으로 그리되, rangeEndMonth 가 연속된 패널 밖이면 마지막 패널만 종료일의 달로 대체한다. (예: 6월 | 12월)
+      const endOffset = count > 1 && this.rangeEndMonth !== null && this.rangeEndMonth > firstMonth + count - 1 ? this.rangeEndMonth - firstMonth : -1;
+      for (let i = 0; i < count; i++) {
         const table = prototype.cloneNode(true) as HTMLTableElement;
-        const date = this.currentDate.clone().setDate(1).addMonth(i);
+        const date = this.currentDate.clone().setDate(1).addMonth(i === count - 1 && endOffset >= 0 ? endOffset : i);
         table.querySelector('caption')!.textContent = date.format(this.options.showMonthAfterYear ? 'YYYY MMMM' : 'MMMM YYYY');
         this.drawDayMonth(date, table.querySelector('tbody')!);
         container.appendChild(table);
@@ -1030,7 +1076,7 @@ export class DateTimePicker {
   }
 
   private drawDayMonth(monthDate: DaraDate, target: Element) {
-    let monthFirstDate = monthDate.clone();
+    const monthFirstDate = monthDate.clone();
     const currentMonth = monthFirstDate.getMonth();
     monthFirstDate.setDate(1);
 
@@ -1064,7 +1110,7 @@ export class DateTimePicker {
         calHTML.push((i == 0 ? "" : "</tr>") + "<tr>");
       }
 
-      let disabled = this.isDayDisabled(dateItem);
+      const disabled = this.isDayDisabled(dateItem);
 
       let addStylceClass = DAY_STYLE_CLASS[this.dayOrder[i % 7]];
       const dateItemMonth = dateItem.getMonth();
@@ -1122,7 +1168,12 @@ export class DateTimePicker {
     for (const count of [o.numberOfMonths, o.responsiveOptions?.mobileMonths, o.responsiveOptions?.desktopMonths]) {
       if (count !== undefined && (!Number.isInteger(count) || count < 1 || count > 12)) throw new RangeError('Month count must be between 1 and 12');
     }
-    if (!Number.isInteger(o.minRange) || o.minRange! < 0 || (o.maxRange != null && (!Number.isInteger(o.maxRange) || o.maxRange < Math.max(1, o.minRange!)))) throw new RangeError('Invalid range limits');
+    if (!Number.isInteger(o.minRange) || o.minRange! < 0) throw new RangeError('Invalid range limits');
+    if (o.maxRange != null) {
+      const period = parseRangePeriod(o.maxRange);
+      if (!period || (period.unit === 'D' && period.value < Math.max(1, o.minRange!))) throw new RangeError('Invalid range limits');
+      this.maxPeriod = period;
+    }
     if (o.responsiveOptions?.breakpoint !== undefined && (!Number.isFinite(o.responsiveOptions.breakpoint) || o.responsiveOptions.breakpoint <= 0)) throw new RangeError('Invalid breakpoint');
     for (const date of o.disabledDates || []) this.disabledRangeDays.add(calendarDay(this.parseRangeDate(date)!));
     if ((o.disabledWeekdays || []).some(day => !Number.isInteger(day) || day < 0 || day > 6)) throw new RangeError('Invalid disabled weekday');
@@ -1150,7 +1201,7 @@ export class DateTimePicker {
     if (!end) return true;
     if (end < start || this.rangeDayDisabled(end)) return false;
     const days = calendarDay(end) - calendarDay(start) + 1;
-    if ((!this.options.allowSameDate && days === 1) || days < this.options.minRange! || (this.options.maxRange != null && days > this.options.maxRange)) return false;
+    if ((!this.options.allowSameDate && days === 1) || days < this.options.minRange! || this.exceedsMaxRange(start, end)) return false;
     return !this.rangeCrossesDisabled(start, end);
   }
 
@@ -1195,9 +1246,9 @@ export class DateTimePicker {
 
   // 종료일 선택이 거부되는 사유(길이 제한 / 비활성 날짜 포함)를 안내 메시지로 반환한다. 사유가 없으면 빈 문자열이다.
   private rangeSelectError(start: Date, end: Date): string {
-    const days = calendarDay(end) - calendarDay(start) + 1, min = Math.max(this.options.minRange!, this.options.allowSameDate ? 1 : 2), max = this.options.maxRange;
+    const days = calendarDay(end) - calendarDay(start) + 1, min = Math.max(this.options.minRange!, this.options.allowSameDate ? 1 : 2);
     if (days < min) return String(this.language.getMessage('rangeMin')).replace('{days}', String(min));
-    if (max != null && days > max) return String(this.language.getMessage('rangeMax')).replace('{days}', String(max));
+    if (this.exceedsMaxRange(start, end)) return this.rangeMaxMessage();
     if (this.rangeCrossesDisabled(start, end)) return String(this.language.getMessage('rangeDisabled'));
     if (end < start) return String(this.language.getMessage('rangeTimeOrder'));
     return '';
@@ -1371,6 +1422,176 @@ export class DateTimePicker {
     }
   }
 
+  // 기간 프리셋(셀렉트박스)이 채우는 범위. 종료일은 아래 순서로 정하고, 시작일은 종료일에서 기간만큼 뺀다.
+  //  1) 이미 선택한 종료일이 있으면 그 날짜를 그대로 둔다.            (종료일 10/20 + 1개월 → 9/20 ~ 10/20)
+  //  2) 시작일만 선택한 상태면 그 시작일을 종료일로 삼는다.            (시작일 11/12 + 1개월 → 10/12 ~ 11/12)
+  //  3) 아무것도 선택하지 않았으면 오늘을 종료일로 둔다.               (오늘 11/5 + 1개월 → 10/5 ~ 11/5)
+  // 적용(applyPeriod)과 항목별 가용 여부(syncPeriodSelect)가 같은 계산을 쓰므로 비활성 · 숨김 항목도 같은 기준이다.
+  private periodPresetRange(preset: PeriodPreset, withTime: boolean): { start: Date; end: Date } {
+    const { startDate, endDate } = this.rangeState, base = endDate || startDate;
+    const end = base ? new Date(base.getTime()) : new Date();
+    if (!base) end.setHours(0, 0, 0, 0);
+    const start = addPeriod(end, preset.period, -1);
+    if (withTime && this.isTimeMode()) {
+      // 시간은 날짜를 따라가지 않고 시작 / 종료 시간 그룹의 값을 따른다. 이미 선택한 종료일의 시간은 그대로 둔다.
+      const [startHour, startMinute] = this.rangeTimeInputs('start');
+      start.setHours(+startHour.value, +startMinute.value, 0, 0);
+      if (!endDate) {
+        // 종료일이 새로 만들어지는 경우(시작일을 종료일로 삼거나 오늘): 날짜는 그대로 두고 종료 시간 그룹의 시간을 쓴다.
+        const [endHour, endMinute] = this.rangeTimeInputs('end');
+        end.setHours(+endHour.value, +endMinute.value, 0, 0);
+      }
+    }
+    return { start, end };
+  }
+
+  // 입력창 바로 뒤(inline 은 달력 위)에 기간 프리셋 셀렉트박스를 만든다. 문구는 textContent 로 넣어 HTML 로 해석되지 않는다.
+  private initPeriodSelect() {
+    const select = document.createElement('select');
+    select.className = 'ddtp-period-select';
+    select.setAttribute('aria-label', String(this.language.getMessage('periodPlaceholder')));
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = String(this.language.getMessage('periodPlaceholder'));
+    select.append(placeholder);
+    for (const preset of PERIOD_PRESETS) {
+      const option = document.createElement('option');
+      option.value = preset.key;
+      option.textContent = String(this.language.getMessage(`period${preset.key}`));
+      select.append(option);
+    }
+    select.addEventListener('change', event => this.applyPeriod(select.value, event));
+    if (this.options.inline) {
+      const row = document.createElement('div');
+      row.className = 'ddtp-period';
+      row.append(select);
+      this.datetimeElement.querySelector('.ddtp-body')?.prepend(row);
+    } else if (!this.wrapPeriodSelect(select)) {
+      return;
+    }
+    this.periodSelectEl = select;
+    this.layoutPeriodSelect();
+  }
+
+  // 입력창을 span 으로 감싸고 셀렉트를 입력창 오른쪽 안쪽에 겹쳐 하나의 컨트롤처럼 보이게 한다. 부모가 없어 감쌀 수 없으면 false.
+  // 위치 · 크기는 클래스(CSS)로, 글자가 셀렉트 밑으로 들어가지 않게 하는 오른쪽 여백만 CSSOM 으로 지정한다. (style 속성 문자열은 CSP 에서 차단될 수 있다)
+  private wrapPeriodSelect(select: HTMLSelectElement): boolean {
+    const target = this.targetElement, parent = target.parentElement;
+    if (!parent) return false;
+    // span · div 같은 일반 태그를 대상으로 한 호스트 페이지 CSS(예: .input-wrap > span)에 걸리지 않도록 하이픈이 들어간 사용자 정의 태그를 쓴다.
+    const field = document.createElement('ddtp-period-field');
+    field.className = 'ddtp-period-field';
+    // 입력창이 부모 폭을 가득 채우는 레이아웃이면 감싸는 요소도 블록으로 두어 폭이 줄어들지 않게 한다.
+    if (parent.clientWidth > 0 && target.offsetWidth >= parent.clientWidth - 2) field.classList.add('ddtp-period-field-block');
+    this.periodInputPadding = target.style.paddingRight;
+    target.replaceWith(field);
+    field.append(target, select);
+    const css = getComputedStyle(target);
+    select.style.fontSize = css.fontSize;
+    select.style.fontFamily = css.fontFamily; // 글자색은 고정하지 않는다. 테마가 바뀌어도 CSS(color: inherit)를 따른다.
+    this.periodField = field;
+    return true;
+  }
+
+  // 입력창의 오른쪽 안쪽 여백을 셀렉트 폭만큼 늘려 글자와 겹치지 않게 한다. 셀렉트가 숨겨져 있으면 원래 값으로 되돌린다.
+  private layoutPeriodSelect() {
+    const select = this.periodSelectEl, input = this.targetElement;
+    if (!select || !this.periodField) return;
+    input.style.paddingRight = this.periodInputPadding;
+    if (select.hidden) return;
+    const width = select.offsetWidth;
+    if (!width) return; // 화면에 보이지 않을 때는 보일 때(show) 다시 계산한다.
+    input.style.paddingRight = `${(parseFloat(getComputedStyle(input).paddingRight) || 0) + width + 4}px`;
+  }
+
+  // 감싼 입력창을 원래 자리로 되돌리고 입력창에 지정했던 여백을 복원한다.
+  private unwrapPeriodSelect() {
+    const field = this.periodField;
+    if (!field) return;
+    const input = this.targetElement;
+    input.style.paddingRight = this.periodInputPadding;
+    if (!input.getAttribute('style')) input.removeAttribute('style');
+    field.replaceWith(input);
+    this.periodField = null;
+  }
+
+  // 프리셋을 고르면 기간을 채우고 바로 확정한다. (셀렉트박스는 팝업 밖에 있어 확인 버튼을 누를 수 없다)
+  private applyPeriod(key: string, event: Event) {
+    const preset = PERIOD_PRESETS.find(item => item.key === key);
+    const restore = () => { this.periodKey = ''; this.syncPeriodSelect(); };
+    if (!preset || this.destroyed) return restore();
+    const { start, end } = this.periodPresetRange(preset, true);
+    this.rangeError = '';
+    this.rangeRejectedDay = null;
+    // 규칙(minRange / maxRange / 비활성 날짜 / minDate · maxDate)에 맞지 않거나 beforeSelectRange · onSelect 가 거부하면 선택을 되돌린다.
+    if (!this.validRange(start, end) || !this.applyRange(start, end, event)) return restore();
+    this.showRangeMonths(start, end);
+    this.refresh(false);
+    this.syncRangeTime();
+    this.confirmRange();
+  }
+
+  // 프리셋을 적용한 뒤 보여 줄 달을 정한다. 왼쪽(첫) 패널은 시작일의 달, 마지막 패널은 종료일의 달이 되게 한다. (종료일 12월 + 6개월 → 6월 | 12월)
+  // - 시작일 · 종료일의 달이 지금 보이는 패널에 이미 모두 들어 있으면 달력을 그대로 둔다. (11월 | 12월 에서 12/3 ~ 12/10 → 그대로)
+  // - 둘이 패널 수 이내의 거리면 종료일의 달이 마지막인 연속된 달로 옮긴다. (12월 | 1월 에서 11/10 ~ 12/10 → 11월 | 12월)
+  // - 더 멀면 첫 패널을 시작일의 달로, 마지막 패널을 종료일의 달로 하고 가운데 달은 건너뛴다. 한 달만 보이는 화면에서는 종료일의 달을 보여 준다.
+  private showRangeMonths(start: Date, end: Date) {
+    const count = this.rangeMonthCount(), index = (date: Date) => date.getFullYear() * 12 + date.getMonth();
+    const current = this.currentDate, currentFirst = current.getYear() * 12 + current.getMonth() - 1;
+    const startIndex = index(start), endIndex = index(end), skipped = this.rangeEndMonth;
+    // 지금 보이는 달: 연속된 패널이거나, 마지막 패널만 종료일의 달로 대체된 패널
+    const split = count > 1 && skipped !== null && skipped > currentFirst + count - 1;
+    const shown = (month: number) => (month >= currentFirst && month <= currentFirst + count - (split ? 2 : 1)) || (split && month === skipped);
+    if (shown(startIndex) && shown(endIndex)) return;
+    let first = currentFirst, endMonth: number | null = null;
+    if (count === 1) first = endIndex;
+    else if (endIndex - startIndex <= count - 1) first = endIndex - (count - 1);
+    else { first = startIndex; endMonth = endIndex; }
+    this.rangeEndMonth = endMonth;
+    if (first === currentFirst) return;
+    this.currentDate = current.clone().setDate(1).setYear(Math.floor(first / 12)).setMonth(first % 12);
+  }
+
+  // 현재 기간이 프리셋과 같으면 그 항목을 선택 상태로, 아니면 안내 문구로 되돌린다. 규칙에 맞지 않는 항목은 비활성으로 둔다.
+  private syncPeriodSelect() {
+    const select = this.periodSelectEl;
+    if (!select) return;
+    const { startDate, endDate, complete } = this.rangeState;
+    const key = `${startDate?.getTime()}|${endDate?.getTime()}|${calendarDay(new Date())}`;
+    if (key === this.periodKey) return;
+    this.periodKey = key;
+    let selected = '', visible = 0;
+    for (const preset of PERIOD_PRESETS) {
+      const { start, end } = this.periodPresetRange(preset, false);
+      const option = select.querySelector(`option[value="${preset.key}"]`) as HTMLOptionElement;
+      const exceeds = this.exceedsMaxRange(start, end), disabled = !this.validRange(start, end);
+      if (option.hidden !== exceeds) option.hidden = exceeds; // maxRange 를 넘는 항목은 보이지 않게 한다.
+      if (option.disabled !== disabled) option.disabled = disabled; // 그 밖의 규칙(비활성 날짜 · minDate 등)에 맞지 않으면 비활성으로 둔다.
+      if (!exceeds) visible++;
+      if (complete && startDate && endDate && calendarDay(startDate) === calendarDay(start) && calendarDay(endDate) === calendarDay(end)) selected = preset.key;
+    }
+    if (select.hidden !== !visible) select.hidden = !visible; // 고를 수 있는 항목이 없으면 셀렉트 자체를 숨긴다.
+    if (select.value !== selected) select.value = selected;
+    this.layoutPeriodSelect();
+  }
+
+  // 기간이 maxRange 를 넘는지 확인한다. 숫자 · 'D' 는 양 끝을 포함한 일 수, 'W' · 'M' · 'Y' 는 종료일에서 기간을 뺀 날짜(말일은 보정)가 시작일보다 늦으면 넘는 것이다.
+  // 종료일 기준으로 빼므로 프리셋(오늘 − 기간 ~ 오늘)은 같은 기간의 maxRange 에 항상 맞는다. (5/31 의 1개월 = 4/30 ~ 5/31)
+  private exceedsMaxRange(start: Date, end: Date): boolean {
+    const period = this.maxPeriod;
+    if (!period) return false;
+    return period.unit === 'D' ? calendarDay(end) - calendarDay(start) + 1 > period.value : calendarDay(addPeriod(end, period, -1)) > calendarDay(start);
+  }
+
+  private rangeMaxMessage(): string {
+    const period = this.maxPeriod;
+    if (!period) return '';
+    if (period.unit === 'D') return String(this.language.getMessage('rangeMax')).replace('{days}', String(period.value));
+    const unit = period.unit === 'W' ? 'periodWeeks' : period.unit === 'M' ? 'periodMonths' : 'periodYears';
+    const label = String(this.language.getMessage(unit)).replace('{n}', String(period.value));
+    return String(this.language.getMessage('rangeMaxPeriod')).replace('{period}', label);
+  }
+
   private rangeCellDate(cell: Element): Date {
     const [month, day] = cell.getAttribute('data-day')!.split(',').map(Number);
     const date = new Date(0); date.setFullYear(Number(cell.getAttribute('data-year')), month - 1, day); date.setHours(0, 0, 0, 0);
@@ -1418,6 +1639,7 @@ export class DateTimePicker {
     // disabled 는 같은 값을 대입해도 속성 변경으로 기록되므로 바뀔 때만 쓴다.
     const confirmDisabled = !!state.startDate && !state.complete;
     if (confirm && confirm.disabled !== confirmDisabled) confirm.disabled = confirmDisabled;
+    this.syncPeriodSelect();
   }
 
   private syncRangeTime() {
@@ -1469,7 +1691,7 @@ export class DateTimePicker {
       return true;
     }
 
-    let yearMonth = year * 12 + month;
+    const yearMonth = year * 12 + month;
 
     if ((this.minMonth != -1 && this.minMonth > yearMonth) || (this.maxMonth != -1 && this.maxMonth < yearMonth)) {
       return true;
