@@ -7,16 +7,23 @@
       "Bash(npm run build:tsc)",
       "Bash(npm run docs:gen)",
       "Bash(npm run test)",
+      "Bash(npm run test:types)",
+      "Bash(npm run test:package)",
+      "Bash(npm run audit:security)",
       "Bash(npm run pwtest)",
       "Bash(npm test)",
+      "Bash(node --test tests/*)",
       "Bash(node ../ui-common-harness/scripts/*)"
     ],
     "deny": [
       "Edit(dist/**)",
+      "Edit(docs/**)",
       "Bash(npm publish*)",
       "Bash(yarn publish*)",
       "Bash(pnpm publish*)",
-      "Bash(git push*)"
+      "Bash(git push*)",
+      "Bash(git reset --hard*)",
+      "Bash(git clean*)"
     ]
   },
   "hooks": {

@@ -248,3 +248,13 @@ test('Today uses the real date and time input values clamp before padding', asyn
   assert.equal(await page.locator('#calendar .ddtp-hour').inputValue(), '23');
   assert.equal(await page.locator('#calendar .ddtp-minute').inputValue(), '00');
 });
+
+test('autoClose false keeps the popup open after a date click redraws the calendar', async () => {
+  await page.evaluate(() => { window.picker = Daracl.dateTimePicker.create('#input', { autoClose: false, initialDate: '2026-11-05' }); });
+  await page.locator('#input').click();
+  await page.locator('.ddtp-day[data-day="11,12"] span').click();
+  assert.equal(await page.locator('.daracl-datetime-wrapper.show').count(), 1);
+  assert.equal(await page.locator('#input').inputValue(), '2026-11-12');
+  await page.locator('#other').evaluate(el => el.click());
+  assert.equal(await page.locator('.daracl-datetime-wrapper.show').count(), 0);
+});

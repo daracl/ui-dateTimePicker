@@ -1,6 +1,6 @@
 {
   "name": "@daracl/datetimepicker",
-  "version": "0.0.14",
+  "version": "0.0.15",
   "sideEffects": [
     "./style/*.scss",
     "./style/*.css",
@@ -62,15 +62,11 @@
     "semi": true,
     "singleQuote": false
   },
-  "editor.formatOnSave": true,
-  "[javascript]": {
-    "editor.formatOnSave": false
-  },
   "dependencies": {
     "@daracl/ui-style": "^0.0.8"
   },
   "devDependencies": {
-    "@daracl/core": "^0.0.13",
+    "@daracl/core": "^0.0.14",
     "@playwright/test": "^1.55.1",
     "@types/node": "^20.1.0",
     "material-icons": "^1.13.8",
@@ -107,7 +103,7 @@
     "node": "^20.19.0 || >=22.12.0"
   },
   "peerDependencies": {
-    "@daracl/core": "^0.0.13"
+    "@daracl/core": "^0.0.14"
   },
   "type": "module"
 }

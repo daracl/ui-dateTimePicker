@@ -5,6 +5,30 @@ export interface OptionCallback {
 }
 
 export interface DateTimePickerOptions {
+  selectionMode?: 'single' | 'range';
+  numberOfMonths?: number;
+  responsive?: boolean;
+  responsiveOptions?: { breakpoint?: number; mobileMonths?: number; desktopMonths?: number };
+  startDate?: Date | string | null;
+  endDate?: Date | string | null;
+  minRange?: number;
+  maxRange?: number | null;
+  allowSameDate?: boolean;
+  allowReverse?: boolean;
+  resetRangeOnStart?: boolean;
+  confirmButton?: boolean;
+  clearButton?: boolean;
+  showRangeHighlight?: boolean;
+  showRangePreview?: boolean;
+  showOutsideDays?: boolean;
+  disabledDates?: (Date | string)[];
+  disabledWeekdays?: number[];
+  onRangeStart?: ((date: Date) => void) | null;
+  onRangeChange?: ((range: DateRangeResult) => void) | null;
+  onRangeComplete?: ((range: DateRangeResult) => void) | null;
+  onRangeConfirm?: ((range: DateRangeResult) => void) | null;
+  onRangeCancel?: (() => void) | null;
+  beforeSelectRange?: ((range: DateRangeResult) => boolean | void) | null;
   inline: boolean; // layer or innerhtml
   initialDate: string | Date; // 초기화 요일
   isRTL: boolean;
@@ -24,4 +48,17 @@ export interface DateTimePickerOptions {
   afterChangeDatepicker?: OptionCallback; // 년,월,일의 날짜가 변경 된후 호출
   onClose?: OptionCallback;
   beforeDrawDate?: OptionCallback; // 날짜 호출 전에 호출.
+}
+
+export interface DateRangeResult {
+  startDate: Date | null;
+  endDate: Date | null;
+  days: number;
+  complete: boolean;
+}
+
+export interface DateRangeState extends DateRangeResult {
+  selecting: 'start' | 'end';
+  committed: boolean;
+  activeDate: Date | null;
 }

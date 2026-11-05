@@ -1,3 +1,4 @@
+import { createRangeExamples } from './range-examples.js';
 import { DateTimePicker as Picker } from '../src/index.ts';
 import '@daracl/ui-style/theme-vars.css';
 import './playground.css';
@@ -99,6 +100,7 @@ function initialize() {
     instances.push(instance);
     if (id === 'date') window.aaa = instance;
   });
+  instances.push(...createRangeExamples(options, recordEvent));
   document.querySelector('#selectedDate').textContent = Picker.format(now, 'YYYY.MM.DD HH:mm');
   document.querySelector('#lastPick').textContent = '날짜를 선택하면 여기에 표시됩니다.';
   document.querySelector('#configCode').textContent = `DateTimePicker.create('#date', {\n  inline: true,\n  mode: 'datetime',\n  weekStartDay: ${options.weekStartDay},\n  isRTL: ${options.isRTL},\n  autoClose: ${options.autoClose},\n  enableTodayBtn: ${options.enableTodayBtn}\n});`;

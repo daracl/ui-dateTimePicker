@@ -6,6 +6,13 @@ export interface Message {
     pm: string;
     today: string;
     ok: string;
+    clear?: string;
+    cancel?: string;
+    time?: string;
+    rangeStart?: string;
+    rangeEnd?: string;
+    selectRangeStart?: string;
+    selectRangeEnd?: string;
     months: {
         full: string[];
         abbr: string[];

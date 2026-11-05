@@ -1,4 +1,5 @@
-import { DateTimePickerOptions } from "./types/DateTimePickerOptions";
+import { calendarDay, cloneDate, rangeResult } from './util/range';
+import { DateTimePickerOptions, DateRangeResult, DateRangeState } from "./types/DateTimePickerOptions";
 import { MessageOptions } from "./types/Message";
 import format from "./format";
 import parser from "./util/parser";
@@ -12,6 +13,11 @@ import { isFunction, isNumeric, leftPad, leftPadClamp } from "@daracl/core";
 declare const APP_VERSION: string;
 
 let DEFAULT_OPTIONS: DateTimePickerOptions = {
+  selectionMode: 'single', numberOfMonths: 2, responsive: true,
+  startDate: null, endDate: null, minRange: 0, maxRange: null,
+  allowSameDate: true, allowReverse: false, resetRangeOnStart: true,
+  confirmButton: false, clearButton: true, showRangeHighlight: true,
+  showRangePreview: true, showOutsideDays: true,
   inline: false, // layer or innerhtml
   weekStartDay: 0,
   initialDate: "",
@@ -55,6 +61,13 @@ export class DateTimePicker {
   public static format = format;
   public static parser = parser;
 
+  private rangeState: DateRangeState = { ...rangeResult(null, null), selecting: 'start', committed: false, activeDate: null };
+  private committedRange: DateRangeResult = rangeResult(null, null);
+  private hasCommittedRange = false;
+  private rangeMedia?: MediaQueryList;
+  private disabledRangeDays = new Set<number>();
+  private readonly rangeResize = () => { if (!this.destroyed) { this.refresh(false); this.measurePosition()?.(); } };
+  private get isRange() { return this.options.selectionMode === 'range'; }
   private readonly options;
   private readonly language: Language;
 
@@ -117,6 +130,9 @@ export class DateTimePicker {
     this._viewMode = Object.keys(DateViewMode).includes(this.options.mode) ? this.options.mode as DateViewMode : DateViewMode.date;
 
     this.initMode = this._viewMode;
+    if (this.isRange && ![DateViewMode.date, DateViewMode.datetime].includes(this.initMode)) {
+      throw new RangeError('Range selection requires date or datetime mode');
+    }
 
     this.language = new Language(message);
 
@@ -160,6 +176,8 @@ export class DateTimePicker {
     if (this.currentDate.getTime() < this.minDate) this.currentDate = new DaraDate(new Date(this.minDate), this.language);
     if (this.currentDate.getTime() > this.maxDate) this.currentDate = new DaraDate(new Date(this.maxDate), this.language);
 
+    if (this.isRange) this.initializeRange();
+
     if (this.options.inline) {
       this.originalClassName = selectorElement.className;
       this.originalContent = selectorElement.innerHTML;
@@ -181,6 +199,7 @@ export class DateTimePicker {
     }
 
     this.createDatetimeTemplate();
+    if (this.isRange) this.initRangeTemplate();
 
     if (this.isTimeMode()) {
       this.hourInputEle = this.datetimeElement.querySelector(".ddtp-hour") as HTMLInputElement;
@@ -197,6 +216,10 @@ export class DateTimePicker {
     this.initDateEvent();
 
     this.initTimeEvent();
+    if (this.isRange) {
+      this.syncRangeTime(); this.writeRangeValue();
+      if (this.isInput) (this.targetElement as HTMLInputElement).defaultValue = this.formatRange(this.committedRange);
+    }
     this.options.onLoad?.(this);
   }
   setWeekDays() {
@@ -338,7 +361,7 @@ export class DateTimePicker {
    * 날짜 달력 이벤트처리.
    */
   private initDateEvent() {
-    this.datetimeElement.querySelector(".ddtp-day-body")?.addEventListener("click", (e: Event) => {
+    this.datetimeElement.querySelector(this.isRange ? ".ddtp-range-months" : ".ddtp-day-body")?.addEventListener("click", (e: Event) => {
       const targetEle = (e.target as Element).closest('.ddtp-day');
 
       if (targetEle) {
@@ -352,6 +375,7 @@ export class DateTimePicker {
         if (this.isDayDisabled(candidate) || targetEle.classList.contains('disabled')) {
           return;
         }
+        if (this.isRange) { this.selectRangeDate(new Date(candidate.getTime()), e); return; }
         const previous = this.currentDate;
         this.currentDate = candidate;
 
@@ -370,9 +394,10 @@ export class DateTimePicker {
     });
 
     // today click
-    this.datetimeElement.querySelector(".ddtp-today")?.addEventListener("click", (e: Event) => {
+    this.datetimeElement.querySelector("button.ddtp-today")?.addEventListener("click", (e: Event) => {
       const initDate = new DaraDate(new Date());
       if (this.isDayDisabled(initDate)) return;
+      if (this.isRange) { this.selectRangeDate(new Date(initDate.getTime()), e); return; }
       const previous = this.currentDate.clone();
       this.currentDate.setDate(1);
       this.currentDate.setYear(initDate.getYear());
@@ -402,6 +427,7 @@ export class DateTimePicker {
    */
   public initTimeEvent() {
     if (!this.isTimeMode()) return;
+    if (this.isRange) { this.initRangeTimeEvent(); return; }
 
     let hh = this.currentDate.format("HH");
 
@@ -498,6 +524,7 @@ export class DateTimePicker {
    * @returns
    */
   public getDateValue() {
+    if (this.isRange) return this.formatRange(this.getRange());
     return this.currentDate.format(this.dateFormat);
   }
 
@@ -519,7 +546,7 @@ export class DateTimePicker {
     if (this.destroyed || this.isVisible) {
       return;
     }
-    const entered = parser((this.targetElement as HTMLInputElement).value, this.dateFormat, this.language);
+    const entered = this.isRange ? null : parser((this.targetElement as HTMLInputElement).value, this.dateFormat, this.language);
     if (entered && !this.isDayDisabled(new DaraDate(entered))) {
       this.currentDate = new DaraDate(entered, this.language);
       this.refresh();
@@ -585,6 +612,11 @@ export class DateTimePicker {
         return;
       }
     }
+    // ESC · 바깥 클릭으로 닫을 때 확정되지 않은 기간 선택은 취소한다.
+    if (this.isRange && this.hasPendingRange()) {
+      this.revertRange();
+      this.options.onRangeCancel?.();
+    }
     this.isVisible = false;
 
     this.datetimeElement.classList.remove("show");
@@ -604,6 +636,7 @@ export class DateTimePicker {
   public destroy() {
     if (this.destroyed) return;
     unregisterPopup(this.popupClient);
+    this.rangeMedia?.removeEventListener('change', this.rangeResize);
     this.targetElement.removeEventListener('click', this._targetClickEvent);
     if (this.options.inline) {
       this.targetElement.className = this.originalClassName;
@@ -621,7 +654,9 @@ export class DateTimePicker {
    * @param e
    */
   private _documentClickEvent = (e: Event) => {
-    if (this.isVisible && e.target != this.targetElement && !closestElement(e.target as HTMLElement, this.datetimeElement)) {
+    // 클릭한 칸이 재렌더링으로 DOM 에서 분리되어도 이벤트 경로로 팝업 내부 클릭인지 판단한다.
+    const inside = e.composedPath().includes(this.datetimeElement) || closestElement(e.target as HTMLElement, this.datetimeElement);
+    if (this.isVisible && e.target != this.targetElement && !inside) {
       this.hide();
     }
   };
@@ -712,6 +747,7 @@ export class DateTimePicker {
                 <span class="${showMonthAfterYear ? "ddtp-header-month" : "ddtp-header-year"}"></span>
 
                 <span class="ddtp-date-move">  
+                    ${this.options.enableTodayBtn ? `<button type="button" class="ddtp-today">${escapeHtml(this.language.getMessage("today"))}</button>` : ""}
                     <a href="javascript:;" class="ddtp-move-btn prev">
                         <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px" fill="#000000"><path d="M0 0h24v24H0z" fill="none"/><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
                     </a>
@@ -738,7 +774,6 @@ export class DateTimePicker {
                     
                     <tfoot class="ddtp-day-footer"><tr>
                         <td colspan="7">
-                            <div style="width:99%;text-align:center;margin-top: 5px;${this.options.enableTodayBtn ? "" : "display:none;"}"><button type="button" class="ddtp-today">${escapeHtml(this.language.getMessage("today"))}</button></div>
                             <div class="footer-tooltip"></div>
                         </td>
                     </tr></tfoot>
@@ -937,12 +972,30 @@ export class DateTimePicker {
       return;
     }
 
-    let monthFirstDate = this.currentDate.clone();
+    (this.datetimeElement.querySelector('.ddtp-header-year') as Element).textContent = this.currentDate.format('YYYY');
+    (this.datetimeElement.querySelector('.ddtp-header-month') as Element).textContent = this.currentDate.format('MMMM');
+    if (this.isRange) {
+      const container = this.datetimeElement.querySelector('.ddtp-range-months') as HTMLElement;
+      const prototype = container.querySelector('table')!.cloneNode(true) as HTMLTableElement;
+      container.innerHTML = '';
+      for (let i = 0; i < this.rangeMonthCount(); i++) {
+        const table = prototype.cloneNode(true) as HTMLTableElement;
+        const date = this.currentDate.clone().setDate(1).addMonth(i);
+        table.querySelector('caption')!.textContent = date.format(this.options.showMonthAfterYear ? 'YYYY MMMM' : 'MMMM YYYY');
+        this.drawDayMonth(date, table.querySelector('tbody')!);
+        container.appendChild(table);
+      }
+      this.paintRange();
+    } else this.drawDayMonth(this.currentDate, this.datetimeElement.querySelector('.ddtp-day-body')!);
+    if (this.initMode == DateViewMode.date || this.initMode == DateViewMode.datetime) this.afterChangeDatepicker();
+  }
+
+  private drawDayMonth(monthDate: DaraDate, target: Element) {
+    let monthFirstDate = monthDate.clone();
     const currentMonth = monthFirstDate.getMonth();
     monthFirstDate.setDate(1);
 
-    (this.datetimeElement.querySelector(".ddtp-header-year") as Element).textContent = monthFirstDate.format("YYYY");
-    (this.datetimeElement.querySelector(".ddtp-header-month") as Element).textContent = monthFirstDate.format("MMMM");
+
 
     let day = monthFirstDate.getDay();
 
@@ -978,15 +1031,13 @@ export class DateTimePicker {
       const dateItemMonth = dateItem.getMonth();
 
       if (dateItemMonth != currentMonth) {
-        if (dateItemMonth < currentMonth) {
-          addStylceClass += dateItemMonth == 1 ? " new" : " old";
-        } else {
-          addStylceClass += currentMonth == 1 && dateItemMonth == 12 ? " old" : " new";
-        }
+        // 연도를 포함해 이전 달(old) / 다음 달(new)을 판단한다.
+        addStylceClass += dateItem.getYear() * 12 + dateItemMonth < monthDate.getYear() * 12 + currentMonth ? " old" : " new";
       }
 
       addStylceClass += this.todayDate == dateItemFormat ? " ddtp-today" : "";
-      addStylceClass += this.currentDate.format('YYYY-MM-DD') === dateItemFormat ? ' select' : '';
+      addStylceClass += !this.isRange && this.currentDate.format('YYYY-MM-DD') === dateItemFormat ? ' select' : '';
+      if (this.isRange && !this.options.showOutsideDays && dateItemMonth !== currentMonth) addStylceClass += ' ddtp-outside-hidden';
       addStylceClass += disabled ? " disabled" : "";
 
       let tooltip = "";
@@ -1006,14 +1057,285 @@ export class DateTimePicker {
 
     calHTML.push("</tr>");
 
-    (this.datetimeElement.querySelector(".ddtp-day-body") as Element).innerHTML = calHTML.join("");
+    target.innerHTML = calHTML.join("");
 
-    if (this.initMode == DateViewMode.date || this.initMode == DateViewMode.datetime) {
-      this.afterChangeDatepicker();
+  }
+
+  private parseRangeDate(value: Date | string | null | undefined): Date | null {
+    if (value == null || value === '') return null;
+    const date = typeof value === 'string' ? parser(value, this.dateFormat, this.language) : cloneDate(value);
+    if (!date || !Number.isFinite(date.getTime())) throw new RangeError('Invalid range date');
+    if (this.initMode === DateViewMode.date) date.setHours(0, 0, 0, 0);
+    return date;
+  }
+
+  private initializeRange() {
+    const o = this.options;
+    for (const count of [o.numberOfMonths, o.responsiveOptions?.mobileMonths, o.responsiveOptions?.desktopMonths]) {
+      if (count !== undefined && (!Number.isInteger(count) || count < 1 || count > 12)) throw new RangeError('Month count must be between 1 and 12');
+    }
+    if (!Number.isInteger(o.minRange) || o.minRange! < 0 || (o.maxRange != null && (!Number.isInteger(o.maxRange) || o.maxRange < Math.max(1, o.minRange!)))) throw new RangeError('Invalid range limits');
+    if (o.responsiveOptions?.breakpoint !== undefined && (!Number.isFinite(o.responsiveOptions.breakpoint) || o.responsiveOptions.breakpoint <= 0)) throw new RangeError('Invalid breakpoint');
+    for (const date of o.disabledDates || []) this.disabledRangeDays.add(calendarDay(this.parseRangeDate(date)!));
+    if ((o.disabledWeekdays || []).some(day => !Number.isInteger(day) || day < 0 || day > 6)) throw new RangeError('Invalid disabled weekday');
+    let start = this.parseRangeDate(o.startDate), end = this.parseRangeDate(o.endDate);
+    // 시작일 / 종료일 중 하나만 주어지면 같은 값으로 양쪽을 채운다. 옵션 규칙(minRange 등)에 맞지 않으면 채우지 않는다.
+    const only = start || end;
+    if (only && (!start || !end) && this.validRange(only, only)) { start = cloneDate(only); end = cloneDate(only); }
+    if (!this.validRange(start, end)) throw new RangeError('Invalid initial range');
+    this.rangeState = { ...rangeResult(start, end), selecting: start && !end ? 'end' : 'start', committed: !!end, activeDate: null };
+    this.committedRange = end ? rangeResult(start, end) : rangeResult(null, null);
+    this.hasCommittedRange = !!end;
+    if (start) this.currentDate = new DaraDate(start, this.language);
+  }
+
+  private rangeDayDisabled(date: Date) {
+    const day = calendarDay(date);
+    return (Number.isFinite(this.minDate) && day < calendarDay(new Date(this.minDate))) ||
+      (Number.isFinite(this.maxDate) && day > calendarDay(new Date(this.maxDate))) ||
+      this.disabledRangeDays.has(day) || (this.options.disabledWeekdays || []).includes(date.getDay());
+  }
+
+  private validRange(start: Date | null, end: Date | null): boolean {
+    if (!start) return !end;
+    if (this.rangeDayDisabled(start)) return false;
+    if (!end) return true;
+    if (end < start || this.rangeDayDisabled(end)) return false;
+    const days = calendarDay(end) - calendarDay(start) + 1;
+    if ((!this.options.allowSameDate && days === 1) || days < this.options.minRange! || (this.options.maxRange != null && days > this.options.maxRange)) return false;
+    // 비활성 날짜를 가로지르는 기간도 거부하며 긴 기간을 하루씩 순회하지 않습니다.
+    const first = calendarDay(start), last = calendarDay(end);
+    for (const day of this.disabledRangeDays) if (day >= first && day <= last) return false;
+    for (const weekday of this.options.disabledWeekdays || []) if ((weekday - start.getDay() + 7) % 7 < days) return false;
+    return true;
+  }
+
+  public getRange(): DateRangeResult { return rangeResult(this.rangeState.startDate, this.rangeState.endDate); }
+
+  public getRangeState(): DateRangeState {
+    return { ...this.rangeState, ...this.getRange(), activeDate: cloneDate(this.rangeState.activeDate) };
+  }
+
+  private formatRange(range: DateRangeResult) {
+    return range.startDate ? format(range.startDate, this.dateFormat, this.language) + (range.endDate ? ' ~ ' + format(range.endDate, this.dateFormat, this.language) : '') : '';
+  }
+
+  private writeRangeValue() {
+    if (this.isInput) (this.targetElement as HTMLInputElement).value = this.formatRange(this.committedRange);
+  }
+
+  private applyRange(start: Date | null, end: Date | null, event?: Event, starting = false): boolean {
+    if (this.destroyed || !this.isRange || !this.validRange(start, end)) return false;
+    const previous = this.getRange();
+    if (previous.startDate?.getTime() === start?.getTime() && previous.endDate?.getTime() === end?.getTime()) return true;
+    if (this.options.beforeSelectRange?.(rangeResult(start, end)) === false) return false;
+    if (event && this.options.onSelect?.(this.formatRange(rangeResult(start, end)), this.initMode, event) === false) return false;
+    this.rangeState = { ...rangeResult(start, end), selecting: start && !end ? 'end' : 'start', committed: false, activeDate: null };
+    this.paintRange();
+    if (starting && start) this.options.onRangeStart?.(new Date(start));
+    this.options.onRangeChange?.(this.getRange());
+    if (this.rangeState.complete) {
+      this.options.onRangeComplete?.(this.getRange());
+      if (!this.options.confirmButton) this.confirmRange();
+    }
+    return true;
+  }
+
+  private selectRangeDate(date: Date, event: Event) {
+    const starting = this.rangeState.selecting === 'start';
+    if (this.isTimeMode()) {
+      const [hour, minute] = this.rangeTimeInputs(starting ? 'start' : 'end');
+      date.setHours(+hour.value, +minute.value, 0, 0);
+    } else date.setHours(0, 0, 0, 0);
+    let start = starting ? date : cloneDate(this.rangeState.startDate);
+    let end = starting ? (this.options.resetRangeOnStart ? null : cloneDate(this.rangeState.endDate)) : date;
+    if (starting && end && !this.validRange(start, end)) end = null;
+    if (!starting && start && end && end < start) {
+      if (!this.options.allowReverse) return;
+      [start, end] = [end, start];
+    }
+    if (this.applyRange(start, end, event, starting)) {
+      this.syncRangeTime();
     }
   }
 
+  public confirmRange(): boolean {
+    if (!this.isRange || this.destroyed || (this.rangeState.startDate && !this.rangeState.complete) || !this.validRange(this.rangeState.startDate, this.rangeState.endDate)) return false;
+    if (!this.rangeState.committed) {
+      this.committedRange = this.getRange();
+      this.hasCommittedRange = true;
+      this.rangeState.committed = true;
+      this.writeRangeValue();
+      this.options.onRangeConfirm?.(this.getRange());
+    }
+    if (this.options.autoClose && !this.options.inline) this.hide();
+    return true;
+  }
+
+  public clearRange(): boolean {
+    if (!this.applyRange(null, null)) return false;
+    if (!this.options.confirmButton) this.confirmRange();
+    this.syncRangeTime();
+    return true;
+  }
+
+  public cancelRange() {
+    if (!this.isRange || this.destroyed) return;
+    this.revertRange();
+    this.options.onRangeCancel?.();
+    if (!this.options.inline) this.hide();
+  }
+
+  // 확정되지 않은 선택(시작일만 고른 상태, 확인 전 변경)이 있는지 확인한다.
+  private hasPendingRange() {
+    const { startDate, endDate } = this.rangeState, committed = this.committedRange;
+    return startDate?.getTime() !== committed.startDate?.getTime() || endDate?.getTime() !== committed.endDate?.getTime();
+  }
+
+  // 선택 상태를 마지막으로 확정한 값으로 되돌린다. 팝업은 닫지 않는다.
+  private revertRange() {
+    const before = this.getRange();
+    this.rangeState = { ...rangeResult(this.committedRange.startDate, this.committedRange.endDate), selecting: 'start', committed: this.hasCommittedRange, activeDate: null };
+    this.paintRange();
+    this.syncRangeTime();
+    this.writeRangeValue();
+    if (before.startDate?.getTime() !== this.rangeState.startDate?.getTime() || before.endDate?.getTime() !== this.rangeState.endDate?.getTime()) this.options.onRangeChange?.(this.getRange());
+  }
+
+  private rangeMonthCount() {
+    if (!this.options.responsive) return this.options.numberOfMonths!;
+    return this.rangeMedia?.matches ? (this.options.responsiveOptions?.mobileMonths ?? 1) : (this.options.responsiveOptions?.desktopMonths ?? this.options.numberOfMonths!);
+  }
+
+  private initRangeTemplate() {
+    this.datetimeElement.classList.add('ddtp-range');
+    const table = this.datetimeElement.querySelector('.ddtp-days') as HTMLTableElement;
+    table.createCaption();
+    table.querySelector('tfoot')!.remove();
+    const container = document.createElement('div');
+    container.className = 'ddtp-range-months';
+    table.replaceWith(container); container.appendChild(table);
+    if (this.options.responsive) {
+      this.rangeMedia = window.matchMedia(`(width < ${this.options.responsiveOptions?.breakpoint ?? 768}px)`);
+      this.rangeMedia.addEventListener('change', this.rangeResize);
+    }
+    this.datetimeElement.querySelector('.ddtp-body')!.insertAdjacentHTML('beforeend', `<div class="ddtp-range-actions">
+      <div class="ddtp-range-status" role="status" aria-live="polite"></div>
+      ${this.options.clearButton ? `<button type="button" class="ddtp-range-clear">${escapeHtml(this.language.getMessage('clear'))}</button>` : ''}
+      ${this.options.confirmButton ? `<button type="button" class="ddtp-range-confirm">${escapeHtml(this.language.getMessage('ok'))}</button>` : ''}
+      <button type="button" class="ddtp-range-cancel">${escapeHtml(this.language.getMessage('cancel'))}</button></div>`);
+    this.datetimeElement.querySelector('.ddtp-range-clear')?.addEventListener('click', () => this.clearRange());
+    this.datetimeElement.querySelector('.ddtp-range-confirm')?.addEventListener('click', () => this.confirmRange());
+    this.datetimeElement.querySelector('.ddtp-range-cancel')?.addEventListener('click', () => this.cancelRange());
+    container.addEventListener('mouseover', event => {
+      if (!this.options.showRangePreview || this.rangeState.selecting !== 'end') return;
+      const cell = (event.target as Element).closest('.ddtp-day');
+      this.rangeState.activeDate = cell && !cell.classList.contains('disabled') ? this.rangeCellDate(cell) : null;
+      this.paintRange();
+    });
+    container.addEventListener('mouseleave', () => { this.rangeState.activeDate = null; this.paintRange(); });
+    container.addEventListener('keydown', event => {
+      const cell = (event.target as Element).closest('.ddtp-day');
+      if (cell && (event.key === 'Enter' || event.key === ' ')) {
+        event.preventDefault();
+        if (!cell.classList.contains('disabled')) this.selectRangeDate(this.rangeCellDate(cell), event);
+      }
+    });
+    if (this.isTimeMode()) {
+      // 시작 / 종료 시간을 항상 함께 보여준다. 변경은 즉시 반영되므로 시간 확인 버튼은 두지 않는다.
+      const times = this.datetimeElement.querySelector('.ddtp-times')!;
+      times.classList.add('ddtp-range-times');
+      times.innerHTML = (['start', 'end'] as const).map(endpoint => `<div class="ddtp-range-time" data-endpoint="${endpoint}">
+        <div class="ddtp-range-time-title">${escapeHtml(this.language.getMessage(endpoint === 'start' ? 'rangeStart' : 'rangeEnd'))}</div>
+        <div class="ddtp-range-time-fields">
+          <div class="ddtp-time"><span>H: </span><input type="number" class="ddtp-hour" min="0" max="23" maxlength="2"><input type="range" min="0" max="23" class="ddtp-hour-range"></div>
+          <div class="ddtp-time"><span>M: </span><input type="number" class="ddtp-minute" min="0" max="59" size="2" maxlength="2"><input type="range" min="0" max="59" class="ddtp-minute-range"></div>
+        </div></div>`).join('');
+    }
+  }
+
+  private rangeTimeInputs(endpoint: 'start' | 'end'): [HTMLInputElement, HTMLInputElement] {
+    const group = this.datetimeElement.querySelector(`.ddtp-range-time[data-endpoint="${endpoint}"]`)!;
+    return [group.querySelector('.ddtp-hour') as HTMLInputElement, group.querySelector('.ddtp-minute') as HTMLInputElement];
+  }
+
+  private initRangeTimeEvent() {
+    for (const endpoint of ['start', 'end'] as const) {
+      const group = this.datetimeElement.querySelector(`.ddtp-range-time[data-endpoint="${endpoint}"]`)!;
+      for (const [token, max] of [['hour', 23], ['minute', 59]] as const) {
+        const input = group.querySelector(`.ddtp-${token}`) as HTMLInputElement;
+        const slider = group.querySelector(`.ddtp-${token}-range`) as HTMLInputElement;
+        input.value = slider.value = this.currentDate.format(token === 'hour' ? 'HH' : 'mm');
+        input.addEventListener('input', e => {
+          input.value = slider.value = leftPad(Math.min(this.getTimeNumberValue(input.value), max), 2);
+          this.updateRangeTime(e, endpoint);
+        });
+        slider.addEventListener('input', e => {
+          input.value = leftPadClamp(slider.value, 2, '0');
+          this.updateRangeTime(e, endpoint);
+        });
+      }
+    }
+  }
+
+  private rangeCellDate(cell: Element): Date {
+    const [month, day] = cell.getAttribute('data-day')!.split(',').map(Number);
+    const date = new Date(0); date.setFullYear(Number(cell.getAttribute('data-year')), month - 1, day); date.setHours(0, 0, 0, 0);
+    return date;
+  }
+
+  private paintRange() {
+    const state = this.rangeState;
+    let previewStart = state.startDate, previewEnd = cloneDate(state.activeDate);
+    if (previewEnd && previewStart && this.isTimeMode()) previewEnd.setHours(previewStart.getHours(), previewStart.getMinutes(), 0, 0);
+    if (previewStart && previewEnd && previewEnd < previewStart && this.options.allowReverse) [previewStart, previewEnd] = [previewEnd, previewStart];
+    const preview = !!(previewEnd && this.validRange(previewStart, previewEnd));
+    this.datetimeElement.classList.toggle('ddtp-range-pending', !!state.startDate && !state.complete);
+    this.datetimeElement.querySelectorAll('.ddtp-day').forEach((cell: Element) => {
+      const day = calendarDay(this.rangeCellDate(cell));
+      const start = state.startDate ? calendarDay(state.startDate) : NaN, end = state.endDate ? calendarDay(state.endDate) : NaN;
+      cell.classList.toggle('ddtp-range-start', day === start);
+      cell.classList.toggle('ddtp-range-end', day === end);
+      cell.classList.toggle('ddtp-in-range', !!this.options.showRangeHighlight && day > start && day < end);
+      cell.classList.toggle('ddtp-range-preview', preview && day >= calendarDay(previewStart!) && day <= calendarDay(previewEnd!));
+      cell.setAttribute('aria-selected', String(day >= start && day <= (state.endDate ? end : start)));
+      cell.setAttribute('aria-disabled', String(cell.classList.contains('disabled')));
+      cell.setAttribute('tabindex', cell.classList.contains('disabled') || cell.classList.contains('ddtp-outside-hidden') ? '-1' : '0');
+      cell.setAttribute('aria-label', format(this.rangeCellDate(cell), this.dateFormat, this.language));
+    });
+    const status = this.datetimeElement.querySelector('.ddtp-range-status');
+    if (status) status.textContent = state.complete ? `${this.formatRange(this.getRange())} (${state.days})` : this.language.getMessage(state.startDate ? 'selectRangeEnd' : 'selectRangeStart');
+    const confirm = this.datetimeElement.querySelector('.ddtp-range-confirm') as HTMLButtonElement | null;
+    if (confirm) confirm.disabled = !!state.startDate && !state.complete;
+  }
+
+  private syncRangeTime() {
+    if (!this.isTimeMode()) return;
+    for (const endpoint of ['start', 'end'] as const) {
+      // 종료일이 아직 없으면 사용자가 입력해 둔 종료 시간을 유지한다.
+      const date = endpoint === 'start' ? this.rangeState.startDate || new Date(this.currentDate.getTime()) : this.rangeState.endDate;
+      if (!date) continue;
+      const [hour, minute] = this.rangeTimeInputs(endpoint);
+      const group = hour.closest('.ddtp-range-time')!;
+      hour.value = format(date, 'HH'); minute.value = format(date, 'mm');
+      (group.querySelector('.ddtp-hour-range') as HTMLInputElement).value = hour.value;
+      (group.querySelector('.ddtp-minute-range') as HTMLInputElement).value = minute.value;
+    }
+  }
+
+  private updateRangeTime(event: Event, endpoint: 'start' | 'end') {
+    const start = cloneDate(this.rangeState.startDate), end = cloneDate(this.rangeState.endDate);
+    const date = endpoint === 'end' ? end : start;
+    if (date) {
+      const [hour, minute] = this.rangeTimeInputs(endpoint);
+      date.setHours(+hour.value, +minute.value, 0, 0);
+      this.applyRange(start, end, event);
+    }
+    this.syncRangeTime();
+  }
+
   private isDayDisabled(dateItem: DaraDate) {
+    if (this.isRange && this.rangeDayDisabled(new Date(dateItem.getTime()))) return true;
     if (this.minDate > dateItem.getTime() || this.maxDate < dateItem.getTime()) {
       return true;
     }

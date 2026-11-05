@@ -8,6 +8,13 @@ let localeMessage: Message = {
   pm: "PM",
   today: "Today",
   ok: "Ok",
+  clear: "Clear",
+  cancel: "Cancel",
+  time: "Time",
+  rangeStart: "Start",
+  rangeEnd: "End",
+  selectRangeStart: "Select start date",
+  selectRangeEnd: "Select end date",
   months: {
     full: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
     abbr: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],

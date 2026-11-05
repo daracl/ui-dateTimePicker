@@ -209,3 +209,110 @@ OS 설정(`prefers-color-scheme: dark`)도 따르며, `data-daracl-theme` 속성
 
 ## License
 Darainfo is under [MIT License](./LICENSE).
+## Range Mode (기간 선택)
+
+`selectionMode`를 생략하면 기존 `single` 동작을 그대로 사용합니다. `range`는 `date`와 `datetime`에서 지원합니다. `time`, `month`, `year`와 조합하면 `RangeError`가 발생하며, 단일 선택의 해당 모드들은 종전처럼 작동합니다.
+
+```javascript
+const dateRange = Daracl.dateTimePicker.create('#dateRange', {
+  mode: 'date',
+  selectionMode: 'range',
+  startDate: new Date(2026, 10, 5),
+  endDate: new Date(2026, 10, 12),
+  autoClose: true,
+  onRangeComplete: ({ startDate, endDate, days }) => {
+    console.log(startDate, endDate, days); // 양 끝 날짜를 포함한 8일
+  }
+});
+```
+
+DateTime Range는 기존 시간 숫자 입력과 슬라이더를 재사용합니다. `Start / End` 선택 상자로 편집 대상을 바꾸고 시간 옆의 `Ok`를 누르면 해당 시간만 적용합니다. 잘못된 시간 순서는 거부하고 이전 시간으로 복원합니다. 같은 날의 두 번째 선택은 시작 시간을 기본값으로 사용합니다.
+
+```javascript
+const dateTimeRange = Daracl.dateTimePicker.create('#dateTimeRange', {
+  mode: 'datetime', selectionMode: 'range',
+  startDate: new Date(2026, 10, 5, 9, 0),
+  endDate: new Date(2026, 10, 12, 18, 0),
+  autoClose: false, confirmButton: true,
+  onRangeConfirm: range => console.log('확정', range)
+}, {
+  clear: '초기화', cancel: '취소', time: '시간',
+  rangeStart: '시작', rangeEnd: '종료',
+  selectRangeStart: '시작일을 선택하세요', selectRangeEnd: '종료일을 선택하세요',
+  ok: '확인'
+});
+```
+
+### 옵션과 우선순위
+
+명시한 인스턴스 옵션 > `DateTimePicker.setOptions()` > 라이브러리 기본값 순으로 적용합니다. `undefined`는 기본값을 덮어쓰지 않습니다. 반응형 세부 옵션은 인스턴스에 제공한 객체를 사용하며, 생략된 필드는 아래 기본값으로 보완합니다.
+
+| 옵션 | 기본값 | 의미 |
+| --- | --- | --- |
+| `selectionMode` | `'single'` | `'range'`로 기간 선택 활성화 |
+| `numberOfMonths` | `2` | 표시할 월 수(1~12) |
+| `responsive` | `true` | 화면 너비에 따라 월 수 변경 |
+| `responsiveOptions.breakpoint` | `768` | 이 값 미만이면 모바일 |
+| `responsiveOptions.mobileMonths` | `1` | 모바일 월 수 |
+| `responsiveOptions.desktopMonths` | `numberOfMonths` | 데스크톱 월 수, 지정 시 `numberOfMonths`보다 우선 |
+| `startDate`, `endDate` | `null` | `Date` 또는 기존 `format`에 맞춘 문자열. 둘 중 하나만 지정하면 같은 값으로 양쪽을 채웁니다(`minRange`, `allowSameDate` 등 규칙에 맞지 않으면 채우지 않음) |
+| `minRange`, `maxRange` | `0`, `null` | 양 끝을 포함한 최소/최대 달력 일수. 0/null은 제한 없음 |
+| `allowSameDate` | `true` | 동일 날짜 허용. datetime도 날짜 기준이며 시간 순서는 별도 검사 |
+| `allowReverse` | `false` | 종료일을 먼저 선택하면 거부; true이면 두 일시를 교환 |
+| `resetRangeOnStart` | `true` | 완료 후 새 시작일 선택 시 종료일 제거. false는 유효한 종료일을 유지하고, 무효하면 제거 |
+| `autoClose` | `true` | 확정 후 팝업 닫기. inline에는 영향 없음 |
+| `confirmButton`, `clearButton` | `false`, `true` | 확인/초기화 버튼 표시. 취소 버튼은 항상 표시 |
+| `showRangeHighlight`, `showRangePreview` | `true`, `true` | 내부 기간 배경 / 마우스 미리보기 |
+| `showOutsideDays` | `true` | 이전/다음 달 날짜 셀 표시 |
+| `disabledDates`, `disabledWeekdays` | `[]`, `[]` | Range 전용 제외 날짜 / 요일(일요일 0~토요일 6) |
+
+`minDate`, `maxDate`는 기존처럼 현지 날짜의 시작/끝까지 포함합니다(datetime의 시각 제한은 아님). 비활성 날짜가 양 끝이나 기간 중간에 있으면 기간 전체를 거부합니다. 날짜는 복제하며, 일수는 DST와 관계없이 달력 날짜로 계산합니다. 잘못된 초기 기간과 잘못된 숫자 옵션은 DOM 생성 전에 `RangeError`를 발생시킵니다. 초기 완료 기간은 확정값이며 초기화 시 선택 이벤트는 발생하지 않습니다. 시작일만 지정하면 종료일 선택 대기 상태로 시작합니다. `initialDate`는 시작일이 없을 때 표시 월을 정합니다.
+
+```javascript
+// 기본: PC 2개월, 768px 미만 1개월. 크기를 바꿔도 선택값 유지.
+Daracl.dateTimePicker.create('#responsiveRange', {
+  selectionMode: 'range', numberOfMonths: 2, responsive: true,
+  responsiveOptions: { breakpoint: 768, mobileMonths: 1, desktopMonths: 2 }
+});
+// 항상 2개월을 표시하려면 responsive: false.
+```
+
+### 확정과 취소
+
+| autoClose | confirmButton | 완료 후 동작 |
+| --- | --- | --- |
+| true | false | 즉시 확정하고 닫음 |
+| false | true | 편집값 유지, 확인 버튼으로 확정하고 열린 상태 유지 |
+| false | false | 즉시 확정하고 열린 상태 유지 |
+| true | true | 확인 버튼으로 확정하고 닫음 |
+
+`complete`는 두 날짜 선택 완료, `committed`는 확정 여부입니다. 입력 요소에는 확정값만 `시작 ~ 종료` 형식으로 반영합니다. `getRange()` / `getDateValue()`는 현재 편집 중인 값을 반환합니다. 취소는 마지막 확정값으로 복원하고 팝업을 닫습니다. 초기화는 빈 기간을 만들며, 확인 버튼이 있으면 빈 값도 확인으로 확정할 수 있습니다. 확인 버튼이 없으면 초기화 즉시 빈 값을 확정합니다. Escape/바깥 클릭은 기존처럼 닫기만 수행하고 편집값을 유지합니다. 입력창에 직접 입력한 기간 문자열의 재파싱은 지원하지 않습니다.
+
+### 이벤트와 메서드
+
+모든 Range 콜백의 기본값은 미지정(호출 없음)이며 `null`도 허용합니다. 결과는 `{ startDate, endDate, days, complete }`이고 미완료/빈 기간의 `days`는 0입니다. 콜백과 getter가 반환하는 날짜를 수정해도 내부 상태는 바뀌지 않습니다.
+
+| 이벤트 | 호출 시점 |
+| --- | --- |
+| `beforeSelectRange(range)` | 변경 전. false를 반환하면 변경/후속 이벤트 거부 |
+| `onRangeStart(date)` | 새 시작일 선택 |
+| `onRangeChange(range)` | 날짜/시간/초기화/취소로 값이 변경됨 |
+| `onRangeComplete(range)` | 유효한 두 날짜가 설정되거나 완료 기간의 값이 변경됨 |
+| `onRangeConfirm(range)` | 편집값을 확정. 동일 확정값 재확인 시 중복 호출 없음 |
+| `onRangeCancel()` | 취소 버튼 또는 `cancelRange()` 호출 |
+
+선택 이벤트 순서는 `beforeSelectRange` → 기존 `onSelect` → `onRangeStart`(새 시작일일 때) → `onRangeChange` → `onRangeComplete`(완료일 때) → `onRangeConfirm`(자동 확정일 때)입니다. 기존 `onSelect(value, mode, event)`의 `value`는 Range에서 기간 문자열이며 false로 거부할 수 있습니다. `beforeChangeDatepicker` / `afterChangeDatepicker`는 기존대로 달력 다시 그리기 훅이며 월 개수만큼 중복 호출하지 않습니다.
+
+공개 메서드: `getRange()`, `getRangeState()`, `confirmRange(): boolean`, `clearRange(): boolean`, `cancelRange()`. `destroy()`는 반응형 감지 이벤트도 해제합니다. 반환값 false는 적용/확정 불가능을 뜻합니다.
+
+```typescript
+import { DateTimePicker, type DateRangeResult, type DateRangeState } from '@daracl/datetimepicker';
+const picker = DateTimePicker.create('#typedRange', {
+  mode: 'datetime', selectionMode: 'range', confirmButton: true,
+  onRangeConfirm: (range: DateRangeResult) => console.log(range.days),
+  beforeSelectRange: range => !range.complete || range.days <= 30
+});
+const state: DateRangeState = picker.getRangeState();
+```
+
+시각 상태 클래스는 `ddtp-range-start`, `ddtp-range-end`, `ddtp-in-range`, `ddtp-range-preview`, `ddtp-range-pending`입니다. 테마는 기존 `data-daracl-theme` 및 `@daracl/ui-style/theme-vars.css`를 사용합니다. 달력 날짜는 클릭 또는 포커스 후 Enter/Space로 선택할 수 있습니다. 실행 가능한 예제는 `example/range-demo.mjs`에 있습니다.

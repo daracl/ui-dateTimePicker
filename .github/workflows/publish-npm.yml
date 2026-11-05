@@ -1,0 +1,81 @@
+name: Publish to npm
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-npm
+  cancel-in-progress: false
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.version.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Compare package versions with the previous commit
+        id: version
+        shell: bash
+        run: |
+          node <<'NODE'
+          const { execFileSync } = require('node:child_process');
+          const { appendFileSync, readFileSync } = require('node:fs');
+          const current = JSON.parse(readFileSync('package.json', 'utf8')).version;
+          const parents = execFileSync('git', ['rev-list', '--parents', '-n', '1', 'HEAD'], { encoding: 'utf8' }).trim().split(/\s+/);
+          if (parents.length === 1) {
+            console.log('No previous commit; skipping publication.');
+            appendFileSync(process.env.GITHUB_OUTPUT, 'changed=false\n');
+          } else {
+            const previous = JSON.parse(execFileSync('git', ['show', 'HEAD^:package.json'], { encoding: 'utf8' })).version;
+            if (typeof current !== 'string' || typeof previous !== 'string') {
+              throw new Error('package.json must contain a version string.');
+            }
+            const changed = current !== previous;
+            console.log(`Version: ${previous} -> ${current}; ${changed ? 'publish' : 'skip'}`);
+            appendFileSync(process.env.GITHUB_OUTPUT, `changed=${changed}\n`);
+          }
+          NODE
+
+  publish:
+    needs: version
+    if: needs.version.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+      - name: Set up npm
+        # Trusted Publishing(OIDC)은 npm 11.5.1 이상이 필요하다.
+        run: |
+          npm install --global npm@11
+          node --version
+          npm --version
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Playwright browser
+        # tests/browser.test.mjs 와 tests/range.test.mjs 가 크로미움을 사용한다.
+        run: npx playwright install --with-deps chromium
+      - name: Test and build
+        # npm test: 전체 빌드 -> node --test -> test:types -> test:package
+        run: npm test
+      - name: Publish with Trusted Publishing
+        # OIDC 로 인증하므로 NODE_AUTH_TOKEN 이 필요 없다. prepack 의 중복 빌드는 생략한다.
+        run: npm publish --access public --ignore-scripts

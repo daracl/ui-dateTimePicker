@@ -1,5 +1,5 @@
 export {DateTimePicker} from "./DateTimePicker";
-export type { DateTimePickerOptions } from './types/DateTimePickerOptions';
+export type { DateTimePickerOptions, DateRangeResult, DateRangeState } from './types/DateTimePickerOptions';
 export type { Message, MessageOptions } from './types/Message';
 export { DateViewMode } from './constants';
 

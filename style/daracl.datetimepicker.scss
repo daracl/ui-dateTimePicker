@@ -145,6 +145,8 @@ $ddtp-themes: (
   }
 
   .ddtp-header {
+    display: flex;
+    align-items: center;
     padding: 2px 5px 10px;
     line-height: 25px;
     height: 25px;
@@ -152,22 +154,52 @@ $ddtp-themes: (
 
     .ddtp-header-year {
       font-weight: bold;
-      margin: 0px 10px 0px 0px;
+      margin: 0 6px 0 0;
+      flex-shrink: 0;
+      font-size: 13px;
       cursor: pointer;
     }
 
     .ddtp-header-month {
       font-weight: bold;
-      margin: 0px 10px 0px 0px;
+      margin: 0 6px 0 0;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 13px;
       vertical-align: top;
       cursor: pointer;
     }
 
     .ddtp-date-move {
-      margin-left: auto;
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      margin-inline-start: auto;
+      flex-shrink: 0;
       vertical-align: top;
       float: right;
       direction: ltr;
+
+      button.ddtp-today {
+        padding: 0 5px;
+        height: 22px;
+        margin: 0 3px 0 0;
+        font: inherit;
+        font-size: 11px;
+        line-height: 22px;
+        cursor: pointer;
+        border: 1px solid themes.themed(input-border-color);
+        border-radius: 4px;
+        background: themes.themed(body-bg);
+        color: themes.themed(font-color);
+
+        &:hover {
+          background: themes.themed(hover-bg);
+          color: themes.themed(hover-color);
+        }
+      }
 
       .ddtp-move-btn {
         text-decoration: none;
@@ -474,5 +506,50 @@ $ddtp-themes: (
         }
       }
     }
+  }
+}
+
+// Range 전용 규칙은 단일 선택 레이아웃에 영향을 주지 않습니다.
+.daracl-datetime-wrapper.ddtp-range {
+  .ddtp-datetime { width: max-content; max-width: calc(100vw - 40px); }
+  .ddtp-range-months { display: flex; overflow-x: auto; }
+  .ddtp-range-months .ddtp-days { display: table; width: 235px; flex: 0 0 235px; }
+  .ddtp-days caption { padding: 4px; font-weight: bold; }
+  .ddtp-datetime[view-mode="month"] .ddtp-range-months,
+  .ddtp-datetime[view-mode="year"] .ddtp-range-months { display: none; }
+  .ddtp-datetime[view-mode="month"], .ddtp-datetime[view-mode="year"] { width: 235px; }
+  .ddtp-range-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; margin: 8px 15px; max-width: 480px; }
+  .ddtp-range-status { flex: 1 1 auto; min-width: 0; }
+  .ddtp-range-actions button { width: auto; padding: 4px 12px; }
+  .ddtp-range-actions button:disabled { opacity: .5; cursor: default; }
+  .ddtp-body .ddtp-day.ddtp-in-range,
+  .ddtp-body .ddtp-day.ddtp-range-preview { background: themes.themed(hover-bg); color: themes.themed(hover-color); }
+  .ddtp-body .ddtp-day.ddtp-range-start:before,
+  .ddtp-body .ddtp-day.ddtp-range-end:before { background: var(--ddtp-select-bg); opacity: .5; }
+  &:not(.ddtp-range-pending) .ddtp-day.ddtp-range-start:not(.ddtp-range-end) {
+    background: linear-gradient(to right, transparent 50%, themes.themed(hover-bg) 50%);
+  }
+  .ddtp-day.ddtp-range-end:not(.ddtp-range-start) {
+    background: linear-gradient(to right, themes.themed(hover-bg) 50%, transparent 50%);
+  }
+  &:not(.ddtp-range-pending) .rtl .ddtp-day.ddtp-range-start:not(.ddtp-range-end) {
+    background: linear-gradient(to left, transparent 50%, themes.themed(hover-bg) 50%);
+  }
+  .rtl .ddtp-day.ddtp-range-end:not(.ddtp-range-start) {
+    background: linear-gradient(to left, themes.themed(hover-bg) 50%, transparent 50%);
+  }
+  .ddtp-day.ddtp-range-preview { box-shadow: inset 0 -2px var(--ddtp-select-bg); }
+  .ddtp-day.ddtp-outside-hidden { visibility: hidden; pointer-events: none; }
+  &.ddtp-range-pending .ddtp-range-status { font-weight: bold; }
+  .ddtp-datetime[view-mode="datetime"] .ddtp-body > .ddtp-range-times { display: flex; flex-wrap: nowrap; gap: 16px; }
+  .ddtp-range-time { flex: 1 1 0; min-width: 0; }
+  .ddtp-range-time .ddtp-time { width: 100%; }
+  .ddtp-range-time-title { font-weight: bold; }
+  .ddtp-range-time-fields { display: table; width: 100%; }
+  @media (max-width: 767px) {
+    .ddtp-datetime { max-width: calc(100vw - 24px); }
+    .ddtp-range-actions { max-width: 235px; }
+    .ddtp-range-status { flex-basis: 100%; }
+    .ddtp-datetime[view-mode="datetime"] .ddtp-body > .ddtp-range-times { flex-direction: column; gap: 8px; }
   }
 }
