@@ -78,6 +78,8 @@ export class DateTimePicker {
   private committedRange: DateRangeResult = rangeResult(null, null);
   private hasCommittedRange = false;
   private rangeError = '';
+  // 기간 선택 달력의 칸 색인. 날짜 계산과 고정 속성(aria-label 등)은 그릴 때 한 번만 처리하고, paintRange 는 바뀐 값만 DOM 에 쓴다.
+  private rangeCells: { el: Element; day: number; flags: number; selected: string }[] = [];
   // 종료일 선택이 거부된 날짜. 같은 날짜를 다시 누르면 그 날짜를 새 시작일로 바꾼다.
   private rangeRejectedDay: number | null = null;
   private rangeMedia?: MediaQueryList;
@@ -1021,6 +1023,7 @@ export class DateTimePicker {
         this.drawDayMonth(date, table.querySelector('tbody')!);
         container.appendChild(table);
       }
+      this.indexRangeCells();
       this.paintRange();
     } else this.drawDayMonth(this.currentDate, this.datetimeElement.querySelector('.ddtp-day-body')!);
     if (this.initMode == DateViewMode.date || this.initMode == DateViewMode.datetime) this.afterChangeDatepicker();
@@ -1086,7 +1089,16 @@ export class DateTimePicker {
         tooltip = tooltip ? `title="${escapeHtml(tooltip)}"` : "";
       }
 
-      calHTML.push(`<td class="ddtp-day ${addStylceClass}" data-year="${dateItem.getYear()}" data-day="${dateItem.format("M,D")}" ${tooltip}>`);
+      // 기간 선택은 접근성 속성을 처음부터 HTML 에 넣는다. 그린 뒤 setAttribute 로 다시 쓰면 DOM 변경 기록이 칸 수만큼 늘어난다.
+      let aria = "";
+      if (this.isRange) {
+        const midnight = new Date(0);
+        midnight.setFullYear(dateItem.getYear(), dateItem.getMonth() - 1, dateItem.getDate());
+        midnight.setHours(0, 0, 0, 0);
+        const hidden = !this.options.showOutsideDays && dateItemMonth !== currentMonth;
+        aria = ` aria-selected="false" aria-disabled="${disabled}" tabindex="${disabled || hidden ? -1 : 0}" aria-label="${escapeHtml(format(midnight, this.dateFormat, this.language))}"`;
+      }
+      calHTML.push(`<td class="ddtp-day ${addStylceClass}" data-year="${dateItem.getYear()}" data-day="${dateItem.format("M,D")}"${aria} ${tooltip}>`);
       calHTML.push(`<span>${dateItem.format("d")}</span>`);
       calHTML.push("</td>");
     }
@@ -1307,10 +1319,13 @@ export class DateTimePicker {
     container.addEventListener('mouseover', event => {
       if (!this.options.showRangePreview || this.rangeState.selecting !== 'end') return;
       const cell = (event.target as Element).closest('.ddtp-day');
-      this.rangeState.activeDate = cell && !cell.classList.contains('disabled') ? this.rangeCellDate(cell) : null;
+      const date = cell && !cell.classList.contains('disabled') ? this.rangeCellDate(cell) : null, current = this.rangeState.activeDate;
+      // 칸과 칸 안의 span 을 오가는 mouseover 처럼 미리보기 날짜가 그대로면 다시 그리지 않는다.
+      if (date ? current && calendarDay(current) === calendarDay(date) : !current) return;
+      this.rangeState.activeDate = date;
       this.paintRange();
     });
-    container.addEventListener('mouseleave', () => { this.rangeState.activeDate = null; this.paintRange(); });
+    container.addEventListener('mouseleave', () => { if (!this.rangeState.activeDate) return; this.rangeState.activeDate = null; this.paintRange(); });
     container.addEventListener('keydown', event => {
       const cell = (event.target as Element).closest('.ddtp-day');
       if (cell && (event.key === 'Enter' || event.key === ' ')) {
@@ -1362,6 +1377,11 @@ export class DateTimePicker {
     return date;
   }
 
+  // 새로 그린 칸의 날짜 번호를 한 번만 계산해 둔다. (변하지 않는 aria 속성은 drawDayMonth 가 HTML 에 넣는다)
+  private indexRangeCells() {
+    this.rangeCells = Array.from(this.datetimeElement.querySelectorAll('.ddtp-day'), (el: Element) => ({ el, day: calendarDay(this.rangeCellDate(el)), flags: 0, selected: 'false' }));
+  }
+
   private paintRange() {
     const state = this.rangeState;
     let previewStart = state.startDate, previewEnd = cloneDate(state.activeDate);
@@ -1369,26 +1389,35 @@ export class DateTimePicker {
     if (previewStart && previewEnd && previewEnd < previewStart && this.options.allowReverse) [previewStart, previewEnd] = [previewEnd, previewStart];
     const preview = !!(previewEnd && this.validRange(previewStart, previewEnd));
     this.datetimeElement.classList.toggle('ddtp-range-pending', !!state.startDate && !state.complete);
-    this.datetimeElement.querySelectorAll('.ddtp-day').forEach((cell: Element) => {
-      const day = calendarDay(this.rangeCellDate(cell));
-      const start = state.startDate ? calendarDay(state.startDate) : NaN, end = state.endDate ? calendarDay(state.endDate) : NaN;
-      cell.classList.toggle('ddtp-range-start', day === start);
-      cell.classList.toggle('ddtp-range-end', day === end);
-      cell.classList.toggle('ddtp-in-range', !!this.options.showRangeHighlight && day > start && day < end);
-      cell.classList.toggle('ddtp-range-preview', preview && day >= calendarDay(previewStart!) && day <= calendarDay(previewEnd!));
-      cell.setAttribute('aria-selected', String(day >= start && day <= (state.endDate ? end : start)));
-      cell.setAttribute('aria-disabled', String(cell.classList.contains('disabled')));
-      cell.setAttribute('tabindex', cell.classList.contains('disabled') || cell.classList.contains('ddtp-outside-hidden') ? '-1' : '0');
-      cell.setAttribute('aria-label', format(this.rangeCellDate(cell), this.dateFormat, this.language));
-    });
+    const startDay = state.startDate ? calendarDay(state.startDate) : NaN, endDay = state.endDate ? calendarDay(state.endDate) : NaN;
+    const lastDay = state.endDate ? endDay : startDay, highlight = !!this.options.showRangeHighlight;
+    const previewFirst = preview ? calendarDay(previewStart!) : NaN, previewLast = preview ? calendarDay(previewEnd!) : NaN;
+    for (const cell of this.rangeCells) {
+      const day = cell.day;
+      const flags = (day === startDay ? 1 : 0) | (day === endDay ? 2 : 0) | (highlight && day > startDay && day < endDay ? 4 : 0) | (preview && day >= previewFirst && day <= previewLast ? 8 : 0);
+      if (flags !== cell.flags) {
+        const changed = flags ^ cell.flags, list = cell.el.classList;
+        if (changed & 1) list.toggle('ddtp-range-start', !!(flags & 1));
+        if (changed & 2) list.toggle('ddtp-range-end', !!(flags & 2));
+        if (changed & 4) list.toggle('ddtp-in-range', !!(flags & 4));
+        if (changed & 8) list.toggle('ddtp-range-preview', !!(flags & 8));
+        cell.flags = flags;
+      }
+      const selected = String(day >= startDay && day <= lastDay);
+      if (selected !== cell.selected) { cell.el.setAttribute('aria-selected', selected); cell.selected = selected; }
+    }
     const status = this.datetimeElement.querySelector('.ddtp-range-status');
     if (status) {
+      const text = this.rangeError || (state.complete ? `${this.formatRange(this.getRange())} (${state.days})` : this.language.getMessage(state.startDate ? 'selectRangeEnd' : 'selectRangeStart'));
+      const live = this.rangeError ? 'assertive' : 'polite';
       status.classList.toggle('ddtp-range-error', !!this.rangeError);
-      status.setAttribute('aria-live', this.rangeError ? 'assertive' : 'polite');
-      status.textContent = this.rangeError || (state.complete ? `${this.formatRange(this.getRange())} (${state.days})` : this.language.getMessage(state.startDate ? 'selectRangeEnd' : 'selectRangeStart'));
+      if (status.getAttribute('aria-live') !== live) status.setAttribute('aria-live', live);
+      if (status.textContent !== text) status.textContent = text;
     }
     const confirm = this.datetimeElement.querySelector('.ddtp-range-confirm') as HTMLButtonElement | null;
-    if (confirm) confirm.disabled = !!state.startDate && !state.complete;
+    // disabled 는 같은 값을 대입해도 속성 변경으로 기록되므로 바뀔 때만 쓴다.
+    const confirmDisabled = !!state.startDate && !state.complete;
+    if (confirm && confirm.disabled !== confirmDisabled) confirm.disabled = confirmDisabled;
   }
 
   private syncRangeTime() {

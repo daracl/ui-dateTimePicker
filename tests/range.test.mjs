@@ -444,3 +444,36 @@ test('a same-day end time earlier than the start time is rejected with a message
   assert.match((await state()).startDate, /09:00$/);
   assert.equal(await page.locator('.ddtp-range-time[data-endpoint="start"] .ddtp-hour').inputValue(), '09');
 });
+
+test('range painting keeps aria state correct and only writes DOM values that changed', async () => {
+  await create({ disabledDates: ['2026.11.10'], showOutsideDays: false, autoClose: false, confirmButton: true, format: 'YYYY.MM.DD', initialDate: '2026.11.05' });
+  const attrs = (month, date) => day(month, date).evaluate(cell => ({ selected: cell.getAttribute('aria-selected'), disabled: cell.getAttribute('aria-disabled'), tab: cell.getAttribute('tabindex'), label: cell.getAttribute('aria-label') }));
+  // 처음 그린 상태: 속성이 템플릿에 들어 있다.
+  assert.deepEqual(await attrs(11, 9), { selected: 'false', disabled: 'false', tab: '0', label: '2026.11.09' });
+  assert.deepEqual(await attrs(11, 10), { selected: 'false', disabled: 'true', tab: '-1', label: '2026.11.10' });
+  assert.equal(await page.locator('#calendar .ddtp-outside-hidden').first().getAttribute('tabindex'), '-1');
+  await day(11, 5).click();
+  // 마우스 미리보기: 같은 칸(또는 칸 안의 span)을 다시 지나가도 DOM 을 쓰지 않는다.
+  const records = await page.evaluate(() => {
+    const target = document.querySelector('#calendar'), cell = date => document.querySelector(`#calendar .ddtp-day[data-day="11,${date}"]`);
+    const count = fn => { const observer = new MutationObserver(() => {}); observer.observe(target, { attributes: true, childList: true, subtree: true }); fn(); const list = observer.takeRecords(); observer.disconnect(); return list; };
+    const over = el => el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    const first = count(() => over(cell(8)));
+    return { first: first.length, firstAttrs: first.filter(r => r.attributeName !== 'class').length, same: count(() => over(cell(8))).length, span: count(() => over(cell(8).querySelector('span'))).length,
+      previewed: [...document.querySelectorAll('#calendar .ddtp-range-preview')].map(el => el.getAttribute('data-day')),
+      leave: count(() => document.querySelector('#calendar .ddtp-range-months').dispatchEvent(new MouseEvent('mouseleave'))).length,
+      leaveAgain: count(() => document.querySelector('#calendar .ddtp-range-months').dispatchEvent(new MouseEvent('mouseleave'))).length };
+  });
+  assert.equal(records.same, 0); assert.equal(records.span, 0);
+  assert.equal(records.firstAttrs, 0); // 미리보기는 클래스만 바꾼다. (aria 속성은 다시 쓰지 않는다)
+  assert.ok(records.first > 0 && records.first <= 8, String(records.first)); // 5~8일 칸의 클래스 변경 정도
+  assert.deepEqual(records.previewed, ['11,5', '11,6', '11,7', '11,8']);
+  assert.ok(records.leave > 0 && records.leave <= 8); assert.equal(records.leaveAgain, 0);
+  // 선택 상태는 aria-selected 에 정확히 반영된다. 비활성 날짜(10일)는 기간 안에 들 수 없으므로 5~8일로 확인한다.
+  await day(11, 8).click();
+  for (const [date, expected] of [[4, 'false'], [5, 'true'], [6, 'true'], [8, 'true'], [9, 'false']]) assert.equal((await attrs(11, date)).selected, expected, String(date));
+  // 다시 그려도(월 이동/크기 변경) 속성 갱신 기록이 칸 수(84)만큼 늘지 않는다.
+  const redraw = await page.evaluate(() => { const target = document.querySelector('#calendar'); const observer = new MutationObserver(() => {}); observer.observe(target, { attributes: true, childList: true, subtree: true }); picker.refresh(false); const list = observer.takeRecords(); observer.disconnect(); return { total: list.length, attrs: list.filter(r => r.type === 'attributes').length }; });
+  assert.ok(redraw.attrs < 30, JSON.stringify(redraw));
+  assert.deepEqual(await attrs(11, 6), { selected: 'true', disabled: 'false', tab: '0', label: '2026.11.06' });
+});
