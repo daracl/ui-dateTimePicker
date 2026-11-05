@@ -3,6 +3,8 @@ name: Publish to npm
 on:
   push:
     branches: [main]
+  # 배포가 실패했을 때 버전을 올리지 않고 다시 실행하기 위한 수동 실행. main 브랜치에서만 배포한다.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -33,6 +35,11 @@ jobs:
           const { execFileSync } = require('node:child_process');
           const { appendFileSync, readFileSync } = require('node:fs');
           const current = JSON.parse(readFileSync('package.json', 'utf8')).version;
+          if (process.env.GITHUB_EVENT_NAME === 'workflow_dispatch') {
+            console.log('Manual run; publishing the version in package.json.');
+            appendFileSync(process.env.GITHUB_OUTPUT, 'changed=true\n');
+            process.exit(0);
+          }
           const parents = execFileSync('git', ['rev-list', '--parents', '-n', '1', 'HEAD'], { encoding: 'utf8' }).trim().split(/\s+/);
           if (parents.length === 1) {
             console.log('No previous commit; skipping publication.');
@@ -50,7 +57,7 @@ jobs:
 
   publish:
     needs: version
-    if: needs.version.outputs.changed == 'true'
+    if: needs.version.outputs.changed == 'true' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -62,14 +69,29 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
+          # registry-url 을 지정하지 않는다. 지정하면 setup-node 가 .npmrc 에 _authToken=${NODE_AUTH_TOKEN} 줄을 만들어
+          # 토큰이 없는 OIDC(Trusted Publishing) 인증을 막고 E404 / ENEEDAUTH 로 실패할 수 있다.
           node-version: '24'
-          registry-url: 'https://registry.npmjs.org'
       - name: Set up npm
         # Trusted Publishing(OIDC)은 npm 11.5.1 이상이 필요하다.
         run: |
           npm install --global npm@11
           node --version
           npm --version
+          node -e "const [a,b,c]=process.argv[1].split('.').map(Number);if(a<11||(a===11&&(b<5||(b===5&&c<1))))throw new Error('npm '+process.argv[1]+' is older than 11.5.1 (required for OIDC)')" "$(npm --version)"
+      - name: Verify no npm token is configured
+        # OIDC 는 토큰이 없어야 동작한다. 남아 있는 토큰 설정이 있으면 원인 파악을 위해 실패시킨다.
+        run: |
+          # npm 11 은 config get 으로 토큰을 읽지 못하므로 .npmrc 파일을 직접 확인한다.
+          fail=0
+          if [ -n "${NODE_AUTH_TOKEN:-}" ]; then echo 'NODE_AUTH_TOKEN is set.' >&2; fail=1; fi
+          for f in "$(npm config get userconfig)" "$(npm config get globalconfig)" "${NPM_CONFIG_USERCONFIG:-}" .npmrc; do
+            if [ -n "$f" ] && [ -f "$f" ] && grep -q '_authToken' "$f"; then echo "_authToken found in $f" >&2; fail=1; fi
+          done
+          if [ "$fail" -ne 0 ]; then
+            echo 'An npm auth token is configured; it prevents Trusted Publishing (OIDC).' >&2
+            exit 1
+          fi
       - name: Install dependencies
         run: npm ci
       - name: Install Playwright browser

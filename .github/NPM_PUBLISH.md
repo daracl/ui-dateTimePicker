@@ -25,6 +25,17 @@ GitHub 호스팅 Ubuntu runner 와 `id-token: write` 권한을 사용한다. Nod
 
 공식 안내: https://docs.npmjs.com/trusted-publishers/
 
+## E404 / ENEEDAUTH 로 배포가 실패할 때
+
+`npm error 404 Not Found - PUT https://registry.npmjs.org/@daracl%2fdatetimepicker` 는 패키지가 없어서가 아니라 **OIDC 인증이 되지 않았다**는 뜻일 수 있다. 아래를 순서대로 확인한다.
+
+1. workflow 에서 `actions/setup-node` 에 `registry-url` 을 지정하지 않았는지 확인한다. 지정하면 `.npmrc` 에 `_authToken=${NODE_AUTH_TOKEN}` 가 생겨 OIDC 를 막는다. (로그에 `Unknown user config "always-auth"` 경고가 보이면 이 설정이 남아 있는 것이다.)
+2. npmjs.com 의 Trusted Publisher 값이 workflow 실행과 **정확히 일치**하는지 확인한다: 소유자 `daracl`, 저장소 `ui-dateTimePicker`(대소문자 구분), workflow 파일명 `publish-npm.yml`, environment 비움.
+3. npm 이 11.5.1 이상인지 확인한다. (workflow 가 `npm install --global npm@11` 후 버전을 검사한다.)
+4. `package.json` 의 `repository.url` 이 `git+https://github.com/daracl/ui-dateTimePicker.git` 인지 확인한다.
+
+버전이 같아서 push 만으로는 배포가 시작되지 않을 때는 Actions 탭의 **Publish to npm → Run workflow** (`main` 브랜치)로 수동 실행한다. 수동 실행은 `package.json` 의 현재 버전을 배포하며, 이미 게시된 버전이면 실패한다.
+
 ## 배포 및 확인
 
 - `package.json` 의 `version` 을 올려 `main` 에 push 한다. 이미 게시된 버전은 다시 게시할 수 없으며 `npm publish` 가 실패한다.
