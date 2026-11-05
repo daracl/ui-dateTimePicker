@@ -43,14 +43,31 @@ export interface DateTimePickerOptions {
   zIndex: number;
   enableTodayBtn: boolean; // today button 보일지 여부.
   autoClose: boolean;
+  /** 입력창에 직접 입력할 수 있는지 여부. 기본 false 는 입력창에 readonly 를 적용해 달력으로만 고르게 한다. true 이면 입력창에 날짜를 직접 입력할 수 있다(inline 에는 영향 없음) */
+  editable?: boolean;
   minDate: string | Date; // 초기화 요일
   maxDate: string | Date; // 초기화 요일
   onLoad?: OptionCallback;
+  /**
+   * 값이 확정되어 이전 값과 달라졌을 때 호출된다. 단일 선택은 날짜를 선택해 입력창에 반영된 뒤, 기간 선택은 기간이 확정된 뒤(onRangeConfirm 과 같은 시점)에 호출한다.
+   * 같은 값을 다시 선택하거나 취소 · 닫기 · 이동만 한 경우에는 호출하지 않는다. onSelect 와 달리 거부(false)할 수 없다.
+   */
+  onChange?: (change: DateChange) => void;
   onSelect?: OptionCallback;
   beforeChangeDatepicker?: OptionCallback; // 년,월,일의 날짜가 변경되기 전 호출
   afterChangeDatepicker?: OptionCallback; // 년,월,일의 날짜가 변경 된후 호출
   onClose?: OptionCallback;
   beforeDrawDate?: OptionCallback; // 날짜 호출 전에 호출.
+}
+
+/** onChange 로 전달되는 값. 단일 선택은 startDate 와 endDate 가 같은 값이고, 기간 선택은 확정된 기간이다. */
+export interface DateChange {
+  /** 입력창에 표시되는 문자열. 단일 선택은 `format` 으로 만든 날짜, 기간 선택은 `시작 ~ 종료`. 비운 기간은 빈 문자열 */
+  value: string;
+  startDate: Date | null;
+  endDate: Date | null;
+  /** 양 끝을 포함한 일 수. 기간 선택은 확정된 기간의 일 수(비운 기간은 0), 단일 선택은 1 */
+  days: number;
 }
 
 export interface DateRangeResult {

@@ -1024,3 +1024,229 @@ test('the Today button is hidden whenever today cannot be selected', async () =>
   await page.locator('#input').click();
   assert.equal(await page.locator('.daracl-datetime-wrapper.show button.ddtp-today').isVisible(), false);
 });
+
+test('pressing the start date of a complete range keeps the end and re-selects only the start', async () => {
+  const make = extra => page.evaluate(extra => {
+    window.log = [];
+    window.picker?.destroy();
+    window.picker = Daracl.dateTimePicker.create('#calendar', { inline: true, selectionMode: 'range', initialDate: '2026-11-05', autoClose: false, confirmButton: true, ...extra,
+      onRangeStart: date => log.push('start' + date.getDate()), onRangeChange: range => log.push(range.complete ? 'change-complete' : 'change-partial'), onRangeComplete: () => log.push('complete') });
+  }, extra);
+  const status = page.locator('.ddtp-range-status');
+  for (const resetRangeOnStart of [true, false]) {
+    await make({ resetRangeOnStart });
+    await day(11, 6).click(); await day(11, 12).click();
+    assert.equal((await state()).complete, true);
+    await page.evaluate(() => { log.length = 0; });
+    await day(11, 6).click(); // 시작일을 다시 누른다
+    const waiting = await state();
+    assert.equal(waiting.complete, false, String(resetRangeOnStart)); assert.equal(waiting.startDate, null); assert.match(waiting.endDate, /^2026-11-12/); assert.equal(waiting.selecting, 'start');
+    assert.deepEqual(await page.evaluate(() => log), ['change-partial']); // onRangeStart 는 날짜를 고른 순간에만 호출된다.
+    assert.equal(await status.textContent(), 'Select start date');
+    assert.equal(await page.locator('.ddtp-range-confirm').isDisabled(), true); // 완료되기 전에는 확정할 수 없다.
+    assert.equal(await page.locator('#calendar').evaluate(el => el.classList.contains('ddtp-range-pending')), true); // 대기 표시는 래퍼에 붙는다.
+    assert.equal(await day(11, 12).getAttribute('aria-selected'), 'true');
+    // 종료일은 그대로 두고 새 시작일(11/3)을 고른다.
+    await day(11, 3).click();
+    const done = await state();
+    assert.equal(done.complete, true); assert.match(done.startDate, /^2026-11-03/); assert.match(done.endDate, /^2026-11-12/); assert.equal(done.days, 10);
+    assert.deepEqual(await page.evaluate(() => log), ['change-partial', 'start3', 'change-complete', 'complete']);
+    assert.equal(await page.locator('.ddtp-range-confirm').isDisabled(), false);
+  }
+});
+
+test('while the start date is being re-selected the range preview, reverse selection and rules still work', async () => {
+  const make = extra => page.evaluate(extra => {
+    window.picker?.destroy();
+    window.picker = Daracl.dateTimePicker.create('#calendar', { inline: true, selectionMode: 'range', initialDate: '2026-11-05', autoClose: false, confirmButton: true, ...extra });
+  }, extra);
+  const status = page.locator('.ddtp-range-status');
+  // 마우스 미리보기: 올린 날짜 ~ 종료일
+  await make({});
+  await day(11, 6).click(); await day(11, 12).click(); await day(11, 6).click();
+  await day(11, 9).hover();
+  assert.deepEqual(await page.locator('#calendar .ddtp-range-preview').evaluateAll(cells => cells.map(cell => cell.getAttribute('data-day'))).then(list => [...new Set(list)].sort()), ['11,10', '11,11', '11,12', '11,9']);
+  // 종료일보다 늦은 날을 고르면 allowReverse(기본 true)에 따라 두 날짜를 바꾼다.
+  await day(11, 15).click();
+  assert.match((await state()).startDate, /^2026-11-12/); assert.match((await state()).endDate, /^2026-11-15/); assert.equal((await state()).complete, true);
+  // allowReverse: false 이면 무시하고 계속 시작일을 기다린다.
+  await make({ allowReverse: false });
+  await day(11, 6).click(); await day(11, 12).click(); await day(11, 6).click();
+  await day(11, 15).click();
+  assert.equal((await state()).startDate, null); assert.match((await state()).endDate, /^2026-11-12/); assert.equal((await state()).complete, false);
+  // 규칙 위반(minRange)이면 사유를 보여 주고 대기 상태가 유지된다. 같은 날짜를 다시 누르면 그 날짜가 새 시작일이 되고 종료일은 버린다.
+  await make({ minRange: 5 });
+  await day(11, 1).click(); await day(11, 12).click(); await day(11, 1).click();
+  await day(11, 11).click();
+  assert.equal(await status.textContent(), 'Select at least 5 days.');
+  assert.equal((await state()).startDate, null); assert.match((await state()).endDate, /^2026-11-12/);
+  await day(11, 11).click();
+  assert.match((await state()).startDate, /^2026-11-11/); assert.equal((await state()).endDate, null); assert.equal((await state()).selecting, 'end');
+  // 비활성 날짜를 가로지르는 시작일도 거부한다.
+  await make({ disabledDates: ['2026-11-08'] });
+  await day(11, 9).click(); await day(11, 12).click(); await day(11, 9).click();
+  await day(11, 5).click();
+  assert.equal(await status.textContent(), 'The range includes dates that cannot be selected.');
+  assert.equal((await state()).startDate, null);
+  // 시작일과 종료일이 같은 날이면 종료일 재선택이 우선한다.
+  await make({});
+  await day(11, 6).click(); await day(11, 6).click();
+  assert.equal((await state()).complete, true); assert.equal((await state()).days, 1);
+  await day(11, 6).click();
+  assert.match((await state()).startDate, /^2026-11-06/); assert.equal((await state()).endDate, null);
+});
+
+test('re-selecting the start date works with keyboard, double clicks, Escape and the period select', async () => {
+  // 더블클릭: 첫 클릭이 시작일 재선택을 시작하고 두 번째 클릭이 같은 날짜를 시작일로 다시 정하므로 기간은 그대로 완료 상태로 남는다.
+  await page.evaluate(() => { window.picker?.destroy(); window.picker = Daracl.dateTimePicker.create('#calendar', { inline: true, selectionMode: 'range', initialDate: '2026-11-05', autoClose: false, confirmButton: true }); });
+  await day(11, 6).click(); await day(11, 12).click();
+  await day(11, 6).dblclick();
+  assert.equal((await state()).complete, true); assert.match((await state()).startDate, /^2026-11-06/); assert.match((await state()).endDate, /^2026-11-12/);
+  // 키보드: Enter 로 시작일을 다시 고르고, 키를 길게 눌러 생기는 반복 입력은 무시한다.
+  await day(11, 6).focus();
+  await page.keyboard.press('Enter');
+  assert.equal((await state()).startDate, null);
+  await day(11, 6).evaluate(cell => cell.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', repeat: true, bubbles: true })));
+  assert.equal((await state()).startDate, null);
+  await day(11, 3).focus();
+  await page.keyboard.press('Enter');
+  assert.match((await state()).startDate, /^2026-11-03/); assert.match((await state()).endDate, /^2026-11-12/);
+  // 기간 프리셋: 종료일만 남은 상태에서는 그 종료일 기준으로 시작일을 채운다.
+  await day(11, 3).click();
+  assert.equal((await state()).startDate, null);
+  await page.locator('#calendar select').selectOption('1w');
+  assert.match((await state()).startDate, /^2026-11-05/); assert.match((await state()).endDate, /^2026-11-12/); assert.equal((await state()).complete, true);
+  // 레이어: 시작일 재선택 중 ESC 로 닫으면 마지막 확정값으로 돌아간다.
+  await page.evaluate(() => { window.picker.destroy(); window.layer = Daracl.dateTimePicker.create('#input', { selectionMode: 'range', format: 'YYYY-MM-DD', startDate: '2026-11-06', endDate: '2026-11-12', autoClose: false, confirmButton: true }); });
+  await page.locator('#input').click();
+  const cell = date => page.locator('.daracl-datetime-wrapper.show .ddtp-day[data-day="11,' + date + '"]:not(.old):not(.new)').first();
+  await cell(6).click();
+  assert.equal(await page.evaluate(() => layer.getRangeState().startDate), null);
+  await page.keyboard.press('Escape');
+  assert.equal(await page.locator('.daracl-datetime-wrapper.show').count(), 0);
+  assert.deepEqual(await page.evaluate(() => { const s = layer.getRangeState(); return [s.complete, s.committed, Daracl.dateTimePicker.format(s.startDate), Daracl.dateTimePicker.format(s.endDate)]; }), [true, true, '2026-11-06', '2026-11-12']);
+  assert.equal(await page.locator('#input').inputValue(), '2026-11-06 ~ 2026-11-12');
+});
+
+test('datetime keeps the end time and uses the start time group when the start date is re-selected', async () => {
+  await page.evaluate(() => { window.picker?.destroy(); window.picker = Daracl.dateTimePicker.create('#calendar', { inline: true, selectionMode: 'range', mode: 'datetime', format: 'YYYY-MM-DD HH:mm', startDate: '2026-11-06 08:00', endDate: '2026-11-12 18:30', autoClose: false, confirmButton: true }); });
+  await day(11, 6).click();
+  assert.equal((await state()).startDate, null); assert.match((await state()).endDate, /^2026-11-12 18:30$/);
+  await page.locator('.ddtp-range-time[data-endpoint="start"] .ddtp-hour').fill('09');
+  await day(11, 3).click();
+  assert.match((await state()).startDate, /^2026-11-03 09:00$/); assert.match((await state()).endDate, /^2026-11-12 18:30$/);
+  // 종료일보다 늦은 날: 남아 있던 종료일이 시작일이 되고, 각 시간 그룹의 값을 쓴다.
+  await day(11, 3).click();
+  await page.locator('.ddtp-range-time[data-endpoint="end"] .ddtp-hour').fill('20');
+  await day(11, 15).click();
+  assert.match((await state()).startDate, /^2026-11-12 09:00$/); assert.match((await state()).endDate, /^2026-11-15 20:30$/); // 종료 시간 그룹의 분(30)은 그대로다.
+});
+
+test('onChange receives one object and is called only when the confirmed value differs from the previous one', async () => {
+  await page.clock.setFixedTime('2026-11-05T12:00:00-05:00');
+  const calls = () => page.evaluate(() => log.splice(0));
+  // 단일 선택(레이어): 값이 입력창에 들어간 뒤 { value, startDate, endDate, days } 로 호출된다. startDate 와 endDate 는 같은 값이고 days 는 1.
+  await page.evaluate(() => {
+    window.log = [];
+    window.picker = Daracl.dateTimePicker.create('#input', { initialDate: '2026-11-05', onChange: change => log.push({ keys: Object.keys(change), value: change.value, start: Daracl.dateTimePicker.format(change.startDate), end: Daracl.dateTimePicker.format(change.endDate), same: change.startDate.getTime() === change.endDate.getTime() && change.startDate !== change.endDate, days: change.days, input: document.querySelector('#input').value }) });
+  });
+  await page.locator('#input').click();
+  await page.locator('.layer.show [data-day="11,12"] span').click(); // 11/5 → 11/12: 호출
+  assert.deepEqual(await calls(), [{ keys: ['value', 'startDate', 'endDate', 'days'], value: '2026-11-12', start: '2026-11-12', end: '2026-11-12', same: true, days: 1, input: '2026-11-12' }]);
+  await page.locator('#input').click();
+  await page.locator('.layer.show [data-day="11,12"] span').click(); // 같은 값을 다시 선택: 호출하지 않는다.
+  assert.deepEqual(await calls(), []);
+  await page.locator('#input').click();
+  await page.locator('.layer.show .ddtp-move-btn.next').click(); // 이동만 한 경우도 호출하지 않는다.
+  await page.keyboard.press('Escape');
+  assert.deepEqual(await calls(), []);
+  await page.locator('#input').click();
+  await page.locator('.layer.show [data-day="11,5"] span').first().click(); // 다른 값: 호출
+  assert.equal((await calls())[0].value, '2026-11-05');
+  await page.evaluate(() => picker.destroy());
+  // onSelect 가 거부하면 호출하지 않는다. 처음 표시한 값(초기값)과 같은 날짜를 고르는 것도 호출하지 않는다.
+  await page.evaluate(() => {
+    window.veto = true;
+    window.picker = Daracl.dateTimePicker.create('#calendar', { inline: true, initialDate: '2026-11-05', onSelect: () => !veto, onChange: change => log.push(change.value) });
+  });
+  await page.locator('#calendar [data-day="11,12"] span').click();
+  assert.deepEqual(await calls(), []);
+  await page.evaluate(() => { veto = false; });
+  await page.locator('#calendar [data-day="11,5"] span').click(); // 초기값과 같다
+  assert.deepEqual(await calls(), []);
+  await page.locator('#calendar [data-day="11,6"] span').click();
+  assert.deepEqual(await calls(), ['2026-11-06']);
+  // datetime: 시간 확인 버튼으로 값이 달라지면 호출한다.
+  await page.evaluate(() => { picker.destroy(); window.picker = Daracl.dateTimePicker.create('#calendar', { inline: true, mode: 'datetime', format: 'YYYY-MM-DD HH:mm', initialDate: '2026-11-05 10:00', onChange: change => log.push(change.value + '|' + change.days) }); });
+  await page.locator('#calendar .ddtp-hour').fill('15');
+  await page.locator('#calendar .time-select').click();
+  assert.deepEqual(await calls(), ['2026-11-05 15:00|1']);
+  await page.locator('#calendar .time-select').click(); // 같은 시간: 호출하지 않는다
+  assert.deepEqual(await calls(), []);
+  // 콜백에서 날짜를 바꿔도 내부 상태에는 영향이 없다.
+  await page.evaluate(() => { picker.destroy(); window.picker = Daracl.dateTimePicker.create('#calendar', { inline: true, initialDate: '2026-11-05', onChange: change => { change.startDate.setFullYear(1999); change.endDate.setFullYear(1999); } }); });
+  await page.locator('#calendar [data-day="11,9"] span').click();
+  assert.equal(await page.evaluate(() => picker.getDateValue()), '2026-11-09');
+  await page.evaluate(() => picker.destroy());
+});
+
+test('onChange for a range is called when the range is confirmed with value, startDate, endDate and days', async () => {
+  const make = extra => page.evaluate(extra => {
+    window.log = [];
+    window.picker?.destroy();
+    window.picker = Daracl.dateTimePicker.create('#calendar', { inline: true, selectionMode: 'range', initialDate: '2026-11-05', format: 'YYYY-MM-DD', ...extra,
+      onRangeConfirm: () => log.push('confirm'),
+      onChange: change => log.push({ keys: Object.keys(change), value: change.value, start: change.startDate && Daracl.dateTimePicker.format(change.startDate), end: change.endDate && Daracl.dateTimePicker.format(change.endDate), days: change.days }) });
+  }, extra);
+  const calls = () => page.evaluate(() => log.splice(0));
+  // 자동 확정(confirmButton: false): 시작일은 호출하지 않고, 종료일로 기간이 확정되면 onRangeConfirm 다음에 호출한다.
+  await make({ autoClose: false });
+  await day(11, 6).click();
+  assert.deepEqual(await calls(), []);
+  await day(11, 12).click();
+  assert.deepEqual(await calls(), ['confirm', { keys: ['value', 'startDate', 'endDate', 'days'], value: '2026-11-06 ~ 2026-11-12', start: '2026-11-06', end: '2026-11-12', days: 7 }]);
+  // 확인 버튼: 확인을 누르기 전에는 호출하지 않는다.
+  await make({ confirmButton: true, autoClose: false });
+  await day(11, 6).click(); await day(11, 12).click();
+  assert.deepEqual(await calls(), []);
+  await page.locator('.ddtp-range-confirm').click();
+  assert.deepEqual((await calls()).slice(1), [{ keys: ['value', 'startDate', 'endDate', 'days'], value: '2026-11-06 ~ 2026-11-12', start: '2026-11-06', end: '2026-11-12', days: 7 }]);
+  // 같은 기간을 다시 확정하면 호출하지 않는다. (onRangeConfirm 은 호출된다)
+  await day(11, 12).click(); await day(11, 12).click();
+  await page.locator('.ddtp-range-confirm').click();
+  assert.deepEqual(await calls(), ['confirm']);
+  // 취소 · 되돌리기는 호출하지 않는다.
+  await day(11, 20).click(); await page.locator('.ddtp-range-cancel').click();
+  assert.deepEqual(await calls(), []);
+  // 다른 기간을 확정하면 호출한다. (days 도 달라진다)
+  await day(11, 1).click(); await day(11, 30).click();
+  await page.locator('.ddtp-range-confirm').click();
+  assert.deepEqual((await calls()).slice(1), [{ keys: ['value', 'startDate', 'endDate', 'days'], value: '2026-11-01 ~ 2026-11-30', start: '2026-11-01', end: '2026-11-30', days: 30 }]);
+  // 비우고 확정하면 value 는 빈 문자열, 날짜는 null, days 는 0 이다.
+  await page.locator('.ddtp-range-clear').click();
+  await page.locator('.ddtp-range-confirm').click();
+  assert.deepEqual((await calls()).slice(1), [{ keys: ['value', 'startDate', 'endDate', 'days'], value: '', start: null, end: null, days: 0 }]);
+  // 초기 기간과 같은 기간을 다시 선택해 확정하면 onRangeConfirm 은 호출되지만 onChange 는 호출하지 않는다.
+  await make({ confirmButton: true, autoClose: false, startDate: '2026-11-06', endDate: '2026-11-12' });
+  await day(11, 12).click(); // 종료일 재선택
+  await day(11, 12).click(); // 같은 종료일로 다시 완성
+  assert.deepEqual(await calls(), []);
+  await page.locator('.ddtp-range-confirm').click();
+  assert.deepEqual(await calls(), ['confirm']);
+  // 기간 프리셋은 완성과 확정이 한 번에 일어나므로 한 번 호출한다.
+  await page.clock.setFixedTime('2026-11-05T12:00:00-05:00');
+  await make({ confirmButton: true, autoClose: false });
+  await page.locator('#calendar select').selectOption('1w');
+  assert.deepEqual((await calls()).slice(1), [{ keys: ['value', 'startDate', 'endDate', 'days'], value: '2026-10-29 ~ 2026-11-05', start: '2026-10-29', end: '2026-11-05', days: 8 }]);
+  await page.locator('#calendar select').selectOption('1w'); // 같은 프리셋을 다시 고르면 호출하지 않는다.
+  assert.deepEqual((await calls()).filter(item => typeof item === 'object'), []);
+  // 레이어 + 자동 확정: 입력창에 값이 들어간 뒤 호출한다.
+  await page.evaluate(() => {
+    window.picker.destroy(); window.log = [];
+    window.picker = Daracl.dateTimePicker.create('#input', { selectionMode: 'range', initialDate: '2026-11-05', format: 'YYYY-MM-DD', onChange: change => log.push({ value: change.value, input: document.querySelector('#input').value, days: change.days }) });
+  });
+  await page.locator('#input').click();
+  await page.locator('.daracl-datetime-wrapper.show .ddtp-day[data-day="11,3"]:not(.old):not(.new)').first().click();
+  await page.locator('.daracl-datetime-wrapper.show .ddtp-day[data-day="11,9"]:not(.old):not(.new)').first().click();
+  assert.deepEqual(await calls(), [{ value: '2026-11-03 ~ 2026-11-09', input: '2026-11-03 ~ 2026-11-09', days: 7 }]);
+});

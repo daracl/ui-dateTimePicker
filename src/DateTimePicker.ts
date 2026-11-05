@@ -17,7 +17,7 @@ let DEFAULT_OPTIONS: DateTimePickerOptions = {
   startDate: null, endDate: null, minRange: 0, maxRange: null,
   allowSameDate: true, allowReverse: true, resetRangeOnStart: true,
   confirmButton: false, clearButton: true, showRangeHighlight: true,
-  showRangePreview: true, showOutsideDays: true, periodSelect: true,
+  showRangePreview: true, showOutsideDays: true, periodSelect: true, editable: false,
   inline: false, // layer or innerhtml
   weekStartDay: 0,
   initialDate: "",
@@ -95,6 +95,10 @@ export class DateTimePicker {
   private periodField: HTMLElement | null = null;
   private periodInputPadding = '';
   private periodKey = '';
+  // editable: false 로 우리가 입력창에 readonly 를 적용했는지. destroy 에서는 우리가 바꾼 경우에만 되돌린다. (호스트가 이미 readonly 로 둔 입력창은 그대로 둔다)
+  private readOnlyApplied = false;
+  // onChange 로 마지막으로 알린(또는 처음 표시한) 값. 새 값이 이 값과 다를 때만 onChange 를 호출한다.
+  private lastChangeValue = '';
   // 기간 선택 달력의 칸 색인. 날짜 계산과 고정 속성(aria-label 등)은 그릴 때 한 번만 처리하고, paintRange 는 바뀐 값만 DOM 에 쓴다.
   private rangeCells: { el: Element; day: number; flags: number; selected: string }[] = [];
   // 종료일 선택이 거부된 날짜. 같은 날짜를 다시 누르면 그 날짜를 새 시작일로 바꾼다.
@@ -230,6 +234,12 @@ export class DateTimePicker {
       this.datetimeElement.classList.add('daracl-datetime-wrapper', `ddtp-${daraDatetimeIdx}`, 'embed');
     } else {
       this.isInput = true;
+      // 기본(editable: false)은 입력창을 readonly 로 두어 직접 입력하지 못하게 하고 달력으로만 고르게 한다. 입력창이 아닌 요소(div 등)에는 적용하지 않는다.
+      const target = this.targetElement as HTMLInputElement;
+      if (!this.options.editable && 'readOnly' in target && !target.readOnly) {
+        target.readOnly = true;
+        this.readOnlyApplied = true;
+      }
       (this.targetElement as HTMLInputElement).defaultValue = this.currentDate.format(this.dateFormat);
       (this.targetElement as HTMLInputElement).value = this.currentDate.format(this.dateFormat);
 
@@ -268,8 +278,17 @@ export class DateTimePicker {
       this.syncRangeTime(); this.writeRangeValue();
       if (this.isInput) (this.targetElement as HTMLInputElement).defaultValue = this.formatRange(this.committedRange);
     }
+    this.lastChangeValue = this.isRange ? this.formatRange(this.committedRange) : this.currentDate.format(this.dateFormat);
     this.options.onLoad?.(this);
   }
+
+  // 값이 이전에 알린 값과 다를 때만 onChange 를 호출한다. 날짜는 복사해서 전달하므로 콜백에서 바꿔도 내부 상태에 영향이 없다.
+  private emitChange(value: string, startDate: Date | null, endDate: Date | null, days: number) {
+    if (this.destroyed || value === this.lastChangeValue) return;
+    this.lastChangeValue = value;
+    this.options.onChange?.({ value, startDate: cloneDate(startDate), endDate: cloneDate(endDate), days });
+  }
+
   setWeekDays() {
     let weekStartDay = this.options.weekStartDay;
 
@@ -714,6 +733,7 @@ export class DateTimePicker {
     this.rangeMedia?.removeEventListener('change', this.rangeResize);
     this.targetElement.removeEventListener('click', this._targetClickEvent);
     if (INSTANCES.get(this.targetElement) === this) INSTANCES.delete(this.targetElement);
+    if (this.readOnlyApplied) (this.targetElement as HTMLInputElement).readOnly = false;
     this.unwrapPeriodSelect();
     this.periodSelectEl?.remove();
     if (this.options.inline) {
@@ -813,6 +833,9 @@ export class DateTimePicker {
     if (!this.options.inline && this.options.autoClose) {
       this.hide();
     }
+    // 단일 선택은 startDate 와 endDate 가 같은 값이고 days 는 1 이다.
+    const selected = new Date(this.currentDate.getTime());
+    this.emitChange(formatValue, selected, selected, 1);
     return true;
   }
 
@@ -1181,7 +1204,7 @@ export class DateTimePicker {
     // 시작일 / 종료일 중 하나만 주어지면 같은 값으로 양쪽을 채운다. 옵션 규칙(minRange 등)에 맞지 않으면 채우지 않는다.
     const only = start || end;
     if (only && (!start || !end) && this.validRange(only, only)) { start = cloneDate(only); end = cloneDate(only); }
-    if (!this.validRange(start, end)) throw new RangeError('Invalid initial range');
+    if (!this.validRange(start, end) || (!start && end)) throw new RangeError('Invalid initial range');
     this.rangeState = { ...rangeResult(start, end), selecting: start && !end ? 'end' : 'start', committed: !!end, activeDate: null };
     this.committedRange = end ? rangeResult(start, end) : rangeResult(null, null);
     this.hasCommittedRange = !!end;
@@ -1196,7 +1219,7 @@ export class DateTimePicker {
   }
 
   private validRange(start: Date | null, end: Date | null): boolean {
-    if (!start) return !end;
+    if (!start) return !end || !this.rangeDayDisabled(end); // 종료일만 있는 상태는 시작일을 다시 고르는 중이다.
     if (this.rangeDayDisabled(start)) return false;
     if (!end) return true;
     if (end < start || this.rangeDayDisabled(end)) return false;
@@ -1266,6 +1289,16 @@ export class DateTimePicker {
       this.applyRange(cloneDate(startDate), null, event, false);
       return;
     }
+    // 완료된 기간의 시작일을 다시 누르면 종료일은 유지하고 시작일만 다시 고른다. (종료일 재선택의 대칭, resetRangeOnStart 와 무관)
+    // 시작일과 종료일이 같은 날이면 위의 종료일 재선택이 우선한다.
+    if (!retry && this.rangeState.complete && startDate && endDate && calendarDay(date) === calendarDay(startDate)) {
+      if ((event as MouseEvent).detail > 1) return;
+      this.rangeError = ''; this.rangeRejectedDay = null;
+      this.applyRange(null, cloneDate(endDate), event, false);
+      return;
+    }
+    // 종료일만 남아 있는 상태: 고른 날짜를 시작일로 삼는다.
+    if (!startDate && endDate) { this.selectPendingStart(date, endDate, event, retry); return; }
     const starting = this.rangeState.selecting === 'start' || retry;
     this.rangeError = '';
     this.rangeRejectedDay = null;
@@ -1297,16 +1330,51 @@ export class DateTimePicker {
     }
   }
 
+  // 시작일을 다시 고르는 중(종료일만 남은 상태)에 날짜를 고르면 그 날짜가 시작일이 되고 종료일은 유지된다.
+  // - 종료일보다 늦은 날을 고르면 allowReverse 에 따라 두 날짜를 바꾼다. (false 이면 무시하고 계속 시작일을 기다린다)
+  // - 규칙(minRange / maxRange / 비활성 날짜 / 시간 순서)에 맞지 않으면 사유를 보여 주고, 같은 날짜를 다시 누르면 그 날짜를 새 시작일로 하고 종료일은 버린다.
+  private selectPendingStart(date: Date, keptEnd: Date, event: Event, retry: boolean) {
+    this.rangeError = '';
+    this.rangeRejectedDay = null;
+    const groupTime = (target: Date, endpoint: 'start' | 'end') => {
+      if (this.isTimeMode()) {
+        const [hour, minute] = this.rangeTimeInputs(endpoint);
+        target.setHours(+hour.value, +minute.value, 0, 0);
+      } else target.setHours(0, 0, 0, 0);
+    };
+    groupTime(date, 'start');
+    if (retry) {
+      if (this.applyRange(date, null, event, true)) this.syncRangeTime();
+      return;
+    }
+    let start = date, end = new Date(keptEnd.getTime()), starting = true;
+    if (calendarDay(start) > calendarDay(end)) {
+      if (!this.options.allowReverse) return;
+      // 종료일보다 늦은 날: 남아 있던 종료일이 시작일이 되고 새로 고른 날이 종료일이 된다. 시간은 각 시간 그룹의 값을 따른다.
+      const first = end;
+      end = start; start = first; starting = false;
+      groupTime(start, 'start');
+      groupTime(end, 'end');
+    }
+    const message = this.rangeSelectError(start, end);
+    if (message) { this.rangeError = message; this.rangeRejectedDay = calendarDay(date); this.paintRange(); return; }
+    if (this.applyRange(start, end, event, starting)) this.syncRangeTime();
+  }
+
   public confirmRange(): boolean {
-    if (!this.isRange || this.destroyed || (this.rangeState.startDate && !this.rangeState.complete) || !this.validRange(this.rangeState.startDate, this.rangeState.endDate)) return false;
+    if (!this.isRange || this.destroyed || ((this.rangeState.startDate || this.rangeState.endDate) && !this.rangeState.complete) || !this.validRange(this.rangeState.startDate, this.rangeState.endDate)) return false;
+    let confirmed = false;
     if (!this.rangeState.committed) {
       this.committedRange = this.getRange();
       this.hasCommittedRange = true;
       this.rangeState.committed = true;
       this.writeRangeValue();
       this.options.onRangeConfirm?.(this.getRange());
+      confirmed = true;
     }
     if (this.options.autoClose && !this.options.inline) this.hide();
+    // 확정된 기간이 이전 값과 다를 때만 알린다. (비운 채로 확정하면 value 는 빈 문자열, 날짜는 null)
+    if (confirmed) this.emitChange(this.formatRange(this.committedRange), this.committedRange.startDate, this.committedRange.endDate, this.committedRange.days);
     return true;
   }
 
@@ -1368,7 +1436,9 @@ export class DateTimePicker {
     this.datetimeElement.querySelector('.ddtp-range-confirm')?.addEventListener('click', () => this.confirmRange());
     this.datetimeElement.querySelector('.ddtp-range-cancel')?.addEventListener('click', () => this.cancelRange());
     container.addEventListener('mouseover', event => {
-      if (!this.options.showRangePreview || this.rangeState.selecting !== 'end') return;
+      // 종료일을 기다리는 중이거나, 종료일만 남아 시작일을 다시 고르는 중일 때 미리보기를 보여 준다.
+      const waiting = this.rangeState.selecting === 'end' || (!this.rangeState.startDate && !!this.rangeState.endDate);
+      if (!this.options.showRangePreview || !waiting) return;
       const cell = (event.target as Element).closest('.ddtp-day');
       const date = cell && !cell.classList.contains('disabled') ? this.rangeCellDate(cell) : null, current = this.rangeState.activeDate;
       // 칸과 칸 안의 span 을 오가는 mouseover 처럼 미리보기 날짜가 그대로면 다시 그리지 않는다.
@@ -1605,13 +1675,15 @@ export class DateTimePicker {
 
   private paintRange() {
     const state = this.rangeState;
-    let previewStart = state.startDate, previewEnd = cloneDate(state.activeDate);
-    if (previewEnd && previewStart && this.isTimeMode()) previewEnd.setHours(previewStart.getHours(), previewStart.getMinutes(), 0, 0);
+    // 종료일만 남은 상태(시작일을 다시 고르는 중)에서는 마우스를 올린 날짜 ~ 종료일을 미리 보여 준다.
+    const pendingStart = !state.startDate && !!state.endDate;
+    let previewStart = pendingStart ? cloneDate(state.activeDate) : state.startDate, previewEnd = pendingStart ? cloneDate(state.endDate) : cloneDate(state.activeDate);
+    if (!pendingStart && previewEnd && previewStart && this.isTimeMode()) previewEnd.setHours(previewStart.getHours(), previewStart.getMinutes(), 0, 0);
     if (previewStart && previewEnd && previewEnd < previewStart && this.options.allowReverse) [previewStart, previewEnd] = [previewEnd, previewStart];
-    const preview = !!(previewEnd && this.validRange(previewStart, previewEnd));
-    this.datetimeElement.classList.toggle('ddtp-range-pending', !!state.startDate && !state.complete);
+    const preview = !!(previewStart && previewEnd && this.validRange(previewStart, previewEnd));
+    this.datetimeElement.classList.toggle('ddtp-range-pending', !!(state.startDate || state.endDate) && !state.complete);
     const startDay = state.startDate ? calendarDay(state.startDate) : NaN, endDay = state.endDate ? calendarDay(state.endDate) : NaN;
-    const lastDay = state.endDate ? endDay : startDay, highlight = !!this.options.showRangeHighlight;
+    const lastDay = state.endDate ? endDay : startDay, firstDay = state.startDate ? startDay : endDay, highlight = !!this.options.showRangeHighlight;
     const previewFirst = preview ? calendarDay(previewStart!) : NaN, previewLast = preview ? calendarDay(previewEnd!) : NaN;
     for (const cell of this.rangeCells) {
       const day = cell.day;
@@ -1624,7 +1696,7 @@ export class DateTimePicker {
         if (changed & 8) list.toggle('ddtp-range-preview', !!(flags & 8));
         cell.flags = flags;
       }
-      const selected = String(day >= startDay && day <= lastDay);
+      const selected = String(day >= firstDay && day <= lastDay);
       if (selected !== cell.selected) { cell.el.setAttribute('aria-selected', selected); cell.selected = selected; }
     }
     const status = this.datetimeElement.querySelector('.ddtp-range-status');
@@ -1637,7 +1709,7 @@ export class DateTimePicker {
     }
     const confirm = this.datetimeElement.querySelector('.ddtp-range-confirm') as HTMLButtonElement | null;
     // disabled 는 같은 값을 대입해도 속성 변경으로 기록되므로 바뀔 때만 쓴다.
-    const confirmDisabled = !!state.startDate && !state.complete;
+    const confirmDisabled = !!(state.startDate || state.endDate) && !state.complete;
     if (confirm && confirm.disabled !== confirmDisabled) confirm.disabled = confirmDisabled;
     this.syncPeriodSelect();
   }

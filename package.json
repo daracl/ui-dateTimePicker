@@ -1,6 +1,6 @@
 {
   "name": "@daracl/datetimepicker",
-  "version": "0.0.17",
+  "version": "0.0.18",
   "sideEffects": [
     "./style/*.scss",
     "./style/*.css",

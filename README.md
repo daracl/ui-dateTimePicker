@@ -158,6 +158,7 @@ var aaa = Daracl.dateTimePicker.create('#date', {
 | initialDate | initial date      | new Date()   |                                   |
 | mode        | view mode         | date         | year, month, date, datetime, time |
 | enableTodayBtn        | show the Today button. It only moves the calendar to today (it does not select a date or range, and fires no select events). Hidden when today cannot be selected (`minDate` / `maxDate` / disabled dates or weekdays) | false         | false, true|
+| editable              | allow typing a date into the input. The default `false` applies `readonly` to the input so a date can only be picked from the calendar (an input that is already `readonly` is left alone, and `destroy()` restores only what the picker changed). Ignored for `inline` and for non-input targets | false         | false, true|
 | showMonthAfterYear | show month after           | false | true ,false      |
 | format      | date format       | 'YYYY-MM-DD' |                                   |
 | zIndex      | css z-index       | 1000         |                                   |
@@ -165,12 +166,46 @@ var aaa = Daracl.dateTimePicker.create('#date', {
 | minDate     | minimum date      | ''           |                                   |
 | maxDate     | maximum date      | ''           |                                   |
 | onLoad      | load event   |              |                                   |
-| onSelect    | date select event |              |                                   |
+| onSelect    | date select event (called just before the selection is applied; return `false` to cancel. In range mode it is called at every selection step) |              |                                   |
+| onChange    | value changed event `({ value, startDate, endDate, days })`. Called once the value is confirmed and only when it differs from the previous value. See [onChange](#onchange) |              |                                   |
 | beforeChangeDatepicker    | date change before event |              |                                   |
 | afterChangeDatepicker    | date change after event |              |                                   |
 | beforeDrawDate    | before date draw |              |                                   |
 | isPositionFixed    | position fixed | false      |                                   |
 
+
+# onChange
+
+선택한 값이 **확정되어 이전 값과 달라졌을 때** 한 번 호출됩니다. 단일 선택과 기간 선택이 같은 모양의 객체 하나를 받습니다.
+
+```javascript
+Daracl.dateTimePicker.create('#date', {
+  onChange: ({ value, startDate, endDate, days }) => { /* 확정된 값 */ }
+});
+Daracl.dateTimePicker.create('#range', {
+  selectionMode: 'range',
+  onChange: ({ value, startDate, endDate, days }) => { /* 확정된 기간 */ }
+});
+```
+
+| 필드 | 단일 선택 | 기간 선택 |
+| --- | --- | --- |
+| `value` | `format`으로 만든 날짜 문자열 (`'2026-11-12'`) | `'시작 ~ 종료'` 문자열 (`'2026-11-06 ~ 2026-11-12'`). 비운 채로 확정하면 `''` |
+| `startDate` | 선택한 날짜 `Date` | 시작일 `Date` (비운 기간은 `null`) |
+| `endDate` | `startDate`와 같은 값 `Date` | 종료일 `Date` (비운 기간은 `null`) |
+| `days` | `1` | 양 끝을 포함한 일 수 (비운 기간은 `0`) |
+
+**호출 시점**
+- **단일 선택**: 값이 입력창에 반영되고 `autoClose` 닫힘 처리까지 끝난 뒤. 시간 확인 버튼으로 값이 바뀐 경우도 포함합니다.
+- **기간 선택**: 기간이 **확정된 뒤**(`onRangeConfirm`과 같은 시점, 그 직후). `confirmButton: false`이면 종료일을 고를 때(자동 확정), `true`이면 확인 버튼을 누를 때, 기간 프리셋 셀렉트박스는 고르는 즉시입니다.
+
+**호출하지 않는 경우**
+- 같은 값을 다시 선택하거나(초기값과 같은 날짜 포함) 같은 기간을 다시 확정한 경우
+- 이전/다음 달 이동, 취소(`onRangeCancel`), ESC · 바깥 클릭으로 닫기
+- `onSelect`가 `false`를 반환해 선택이 거부된 경우
+- 기간 선택에서 시작일만 고른 중간 단계(완성 · 확정 전)
+
+`onSelect`와 달리 값을 거부(`false`)할 수 없는 알림 전용 콜백이고, 날짜는 복사본이라 콜백에서 바꿔도 내부 상태에 영향이 없습니다. 기간 선택의 중간 단계와 거부가 필요하면 `onSelect`, `beforeSelectRange`, `onRangeComplete`를 쓰세요.
 
 # Language
 
@@ -332,7 +367,8 @@ Daracl.dateTimePicker.create('#period', {
 
 1. **거부 안내가 떠 있을 때 같은 날짜를 다시 누르면** 그 날짜가 새 시작일이 됩니다. (종료일이 `minRange`/`maxRange`/비활성 날짜 때문에 거부된 직후)
 2. **완료된 기간의 종료일을 다시 누르면** 시작일은 유지하고 종료일만 다시 고릅니다. `resetRangeOnStart`와 무관합니다. 더블클릭의 두 번째 클릭과 키 반복(Enter 길게 누름)은 무시합니다. `onRangeStart`는 다시 호출되지 않고 `onRangeChange`는 종료일이 없는 값으로 호출됩니다.
-3. 그 밖에는 시작일 → 종료일 순서로 선택합니다. 시작일보다 이른 날을 고르면 `allowReverse`(기본 `true`)에 따라 두 날짜를 바꿉니다.
+3. **완료된 기간의 시작일을 다시 누르면** 종료일은 유지하고 시작일만 다시 고릅니다(종료일 재선택의 대칭). `resetRangeOnStart`와 무관합니다. 이때 `getRangeState()`는 `startDate: null`, `endDate: 유지`, `complete: false`, `selecting: 'start'`이고, 마우스를 올린 날짜 ~ 종료일이 미리보기로 보이며, 확인 버튼은 완료되기 전까지 비활성입니다. 새 시작일을 고르면 `onRangeStart`가 호출되고 기간이 완료됩니다. 종료일보다 늦은 날을 고르면 `allowReverse`에 따라 두 날짜를 바꾸고(`false`이면 무시), 규칙(`minRange`/`maxRange`/비활성 날짜/시간 순서)에 맞지 않으면 사유를 보여 줍니다. 같은 날짜를 다시 누르면 그 날짜가 새 시작일이 되고 종료일은 버립니다. 기간 프리셋을 고르면 남아 있는 종료일 기준으로 채웁니다. ESC · 바깥 클릭으로 닫으면 마지막 확정값으로 돌아갑니다. 시작일과 종료일이 같은 날이면 2번(종료일 재선택)이 우선합니다.
+4. 그 밖에는 시작일 → 종료일 순서로 선택합니다. 시작일보다 이른 날을 고르면 `allowReverse`(기본 `true`)에 따라 두 날짜를 바꿉니다.
 
 종료일 선택이 거부되면 사유(`rangeMin`, `rangeMax`, `rangeDisabled`, `rangeTimeOrder`)를 status 영역에 강조해서 보여줍니다.
 

@@ -24,6 +24,10 @@ if (!Picker) {
     weeks: { full: ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'], abbr: ['일', '월', '화', '수', '목', '금', '토'] },
   });
   const now = new Date();
+  const showChange = (label, value, startDate, endDate, days, format) => {
+    const target = document.querySelector('#lastChange');
+    if (target) target.textContent = `onChange · ${label} · value="${value}" · startDate=${Picker.format(startDate, format)} · endDate=${Picker.format(endDate, format)} · days=${days}`;
+  };
   const modes = [
     ['dateText', 'date', 'YYYY.MM.DD', '날짜'],
     ['datetimeText', 'datetime', 'YYYY.MM.DD HH:mm', '날짜와 시간'],
@@ -36,6 +40,8 @@ if (!Picker) {
     mode, format, initialDate: now, showMonthAfterYear: true, enableTodayBtn: true,
     isPositionFixed: id === 'fixedText',
     onSelect: value => { document.querySelector('#lastPick').textContent = `${label} · ${value}`; },
+    // onChange: 값이 확정되어 이전 값과 달라졌을 때만 호출된다.
+    onChange: ({ value, startDate, endDate, days }) => showChange(label, value, startDate, endDate, days, format),
   }));
   document.querySelector('#inlineValue').textContent = Picker.format(now, 'YYYY.MM.DD HH:mm');
   Picker.create('#inlineCalendar', {
@@ -45,5 +51,6 @@ if (!Picker) {
       document.querySelector('#inlineValue').textContent = value;
       document.querySelector('#lastPick').textContent = `인라인 캘린더 · ${value}`;
     },
+    onChange: ({ value, startDate, endDate, days }) => showChange('인라인 캘린더', value, startDate, endDate, days, 'YYYY.MM.DD HH:mm'),
   });
 }

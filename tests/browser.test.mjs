@@ -156,7 +156,7 @@ test('disabled dates do not mutate state and input selections replace edited val
   await page.evaluate(() => { window.picker = Daracl.dateTimePicker.create('#calendar', { inline: true, initialDate: '2026-12-15', minDate: '2026-12-10', maxDate: '2026-12-20' }); });
   await page.locator('#calendar [data-day="12,9"] span').click();
   assert.equal(await page.evaluate(() => picker.getDateValue()), '2026-12-15');
-  await page.evaluate(() => { window.inputPicker = Daracl.dateTimePicker.create('#input', { initialDate: '2026-12-15' }); });
+  await page.evaluate(() => { window.inputPicker = Daracl.dateTimePicker.create('#input', { initialDate: '2026-12-15', editable: true }); });
   await page.locator('#input').fill('2026-12-09');
   await page.locator('#input').click();
   assert.equal(await page.evaluate(() => inputPicker.getDateValue()), '2026-12-09');
@@ -370,4 +370,46 @@ test('calling initTimeEvent again does not bind the time handlers twice', async 
     return selected;
   });
   assert.equal(calls, 1);
+});
+
+test('the input is readonly by default, editable: true allows typing, and destroy restores only what the picker changed', async () => {
+  const readOnly = () => page.locator('#input').evaluate(el => ({ property: el.readOnly, attribute: el.hasAttribute('readonly') }));
+  assert.deepEqual(await readOnly(), { property: false, attribute: false });
+  // 기본값: 입력창이 readonly 이고, 입력창을 눌러 달력을 열어 날짜를 고를 수 있다.
+  await page.evaluate(() => { window.picker = Daracl.dateTimePicker.create('#input', { initialDate: '2026-12-15' }); });
+  assert.deepEqual(await readOnly(), { property: true, attribute: true });
+  await assert.rejects(page.locator('#input').fill('2026-12-09', { timeout: 500 }), /readonly|not editable/i);
+  await page.locator('#input').click();
+  await page.locator('.layer.show [data-day="12,10"] span').click();
+  assert.equal(await page.locator('#input').inputValue(), '2026-12-10');
+  // destroy 하면 우리가 적용한 readonly 를 되돌린다.
+  await page.evaluate(() => picker.destroy());
+  assert.deepEqual(await readOnly(), { property: false, attribute: false });
+  await page.locator('#input').fill('typed');
+  assert.equal(await page.locator('#input').inputValue(), 'typed');
+  // editable: true 이면 readonly 를 적용하지 않고 직접 입력한 값을 읽는다.
+  await page.evaluate(() => { window.picker = Daracl.dateTimePicker.create('#input', { initialDate: '2026-12-15', editable: true }); });
+  assert.deepEqual(await readOnly(), { property: false, attribute: false });
+  await page.locator('#input').fill('2026-12-09');
+  assert.equal(await page.locator('#input').inputValue(), '2026-12-09');
+  await page.evaluate(() => picker.destroy());
+  // 호스트가 이미 readonly 로 둔 입력창은 destroy 해도 그대로 둔다.
+  await page.evaluate(() => { document.querySelector('#input').readOnly = true; window.picker = Daracl.dateTimePicker.create('#input', {}); picker.destroy(); });
+  assert.deepEqual(await readOnly(), { property: true, attribute: true });
+  await page.evaluate(() => { document.querySelector('#input').readOnly = false; });
+  // 같은 입력창에 다시 만들어도 readonly 상태가 어긋나지 않는다.
+  await page.evaluate(() => { window.first = Daracl.dateTimePicker.create('#input', {}); window.second = Daracl.dateTimePicker.create('#input', { editable: true }); });
+  assert.deepEqual(await readOnly(), { property: false, attribute: false });
+  await page.evaluate(() => { second.destroy(); window.third = Daracl.dateTimePicker.create('#input', {}); });
+  assert.deepEqual(await readOnly(), { property: true, attribute: true });
+  await page.evaluate(() => third.destroy());
+  assert.deepEqual(await readOnly(), { property: false, attribute: false });
+  // inline 과 입력창이 아닌 요소는 영향이 없다.
+  await page.evaluate(() => { window.inline = Daracl.dateTimePicker.create('#calendar', { inline: true }); });
+  assert.equal(await page.locator('#calendar').getAttribute('readonly'), null);
+  await page.evaluate(() => { inline.destroy(); window.divPicker = Daracl.dateTimePicker.create('#other', {}); });
+  assert.equal(await page.locator('#other').getAttribute('readonly'), null);
+  // 기간 선택도 같다. (기간은 직접 입력을 읽지 않으므로 기본 readonly 가 자연스럽다)
+  await page.evaluate(() => { divPicker.destroy(); window.rangePicker = Daracl.dateTimePicker.create('#input', { selectionMode: 'range' }); });
+  assert.deepEqual(await readOnly(), { property: true, attribute: true });
 });

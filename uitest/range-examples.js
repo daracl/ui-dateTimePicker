@@ -19,7 +19,10 @@ export function createRangeExamples(options, recordEvent) {
           <details><summary>사용 코드</summary><pre><code>Picker.create('#rangeDateInput', {
   selectionMode: 'range', mode: 'date',
   maxRange: '6M',        // 최대 6개월 ('3M' · '1Y' · '2W', 숫자는 일 수)
-  autoClose: true        // periodSelect: false 로 프리셋 셀렉트박스를 끌 수 있음
+  autoClose: true,       // periodSelect: false 로 프리셋 셀렉트박스를 끌 수 있음
+  onChange: ({ value, startDate, endDate, days }) => {
+    // 기간이 확정되어 이전 값과 달라졌을 때만 호출 (단일 선택과 같은 모양)
+  }
 });</code></pre></details></div>
         </article>
         <article class="card range-example">
@@ -58,10 +61,11 @@ export function createRangeExamples(options, recordEvent) {
   ];
   return examples.map(([id, outputId, label, extra]) => {
     let picker;
+    let lastChange = '—'; // 마지막으로 받은 onChange 값
     const describe = date => date ? Picker.format(date, extra.mode === 'datetime' ? 'YYYY.MM.DD HH:mm' : 'YYYY.MM.DD') : '—';
     const update = () => {
       const state = picker.getRangeState();
-      document.getElementById(outputId).textContent = `시작: ${describe(state.startDate)}\n종료: ${describe(state.endDate)}\n기간: ${state.days}일 · 완료: ${state.complete} · 확정: ${state.committed}`;
+      document.getElementById(outputId).textContent = `시작: ${describe(state.startDate)}\n종료: ${describe(state.endDate)}\n기간: ${state.days}일 · 완료: ${state.complete} · 확정: ${state.committed}\nonChange: ${lastChange}`;
     };
     const record = type => range => {
       update();
@@ -73,6 +77,13 @@ export function createRangeExamples(options, recordEvent) {
       onRangeStart: date => recordEvent('rangeStart', label, describe(date)),
       onRangeChange: record('rangeChange'), onRangeComplete: record('rangeComplete'),
       onRangeConfirm: record('rangeConfirm'), onRangeCancel: record('rangeCancel'),
+      // onChange: 기간이 확정되어 이전 값과 달라졌을 때만 호출된다. (단일 선택과 같은 { value, startDate, endDate, days })
+      onChange: ({ value, startDate, endDate, days }) => {
+        lastChange = `value="${value}" · startDate=${describe(startDate)} · endDate=${describe(endDate)} · days=${days}`;
+        update();
+        document.querySelector('#lastChange').textContent = `onChange · ${label} · ${lastChange}`;
+        recordEvent('change', label, lastChange);
+      },
     }, {
       clear: '초기화', cancel: '취소', ok: '확인', time: '시간', rangeStart: '시작', rangeEnd: '종료',
       selectRangeStart: '시작일을 선택하세요', selectRangeEnd: '종료일을 선택하세요',

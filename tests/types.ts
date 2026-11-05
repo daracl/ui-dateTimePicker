@@ -28,5 +28,13 @@ DateTimePicker.create('#range', { selectionMode: 'range', maxRange: '3M', period
 DateTimePicker.create('#range', { selectionMode: 'range', maxRange: 30 });
 // @ts-expect-error maxRange 는 숫자 또는 문자열만 허용합니다.
 DateTimePicker.create('#range', { selectionMode: 'range', maxRange: true });
+DateTimePicker.create('#date', { editable: true });
+// @ts-expect-error editable 은 boolean 만 허용합니다.
+DateTimePicker.create('#date', { editable: 'yes' });
+import type { DateChange } from '@daracl/datetimepicker';
+DateTimePicker.create('#date', { onChange: (change: DateChange) => { const value: string = change.value; const start: Date | null = change.startDate, end: Date | null = change.endDate, days: number = change.days; void [value, start, end, days]; } });
+DateTimePicker.create('#range', { selectionMode: 'range', onChange: ({ value, startDate, endDate, days }) => { void [value.length, startDate?.getTime(), endDate?.getTime(), days.toFixed(0)]; } });
+// @ts-expect-error onChange 는 DateChange 객체를 받는다. (문자열이 아니다)
+DateTimePicker.create('#date', { onChange: (value: string) => value });
 // @ts-expect-error 선택 방식은 single 또는 range만 허용합니다.
 DateTimePicker.create('#range', { selectionMode: 'multiple' });

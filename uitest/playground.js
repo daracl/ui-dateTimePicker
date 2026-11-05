@@ -85,6 +85,12 @@ function initialize() {
         if (id === 'date') document.querySelector('#selectedDate').textContent = value;
         recordEvent('select', label, value);
       },
+      // onChange: 값이 확정되어 이전 값과 달라졌을 때만 호출된다. 받은 객체를 그대로 보여 준다.
+      onChange: ({ value, startDate, endDate, days }) => {
+        const text = `value="${value}" · startDate=${Picker.format(startDate, format)} · endDate=${Picker.format(endDate, format)} · days=${days}`;
+        document.querySelector('#lastChange').textContent = `onChange · ${label} · ${text}`;
+        recordEvent('change', label, text);
+      },
       onClose: () => recordEvent('close', label),
       beforeChangeDatepicker: (_value, done) => {
         if (id === 'date') {
