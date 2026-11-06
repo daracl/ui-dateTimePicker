@@ -38,3 +38,14 @@ DateTimePicker.create('#range', { selectionMode: 'range', onChange: ({ value, st
 DateTimePicker.create('#date', { onChange: (value: string) => value });
 // @ts-expect-error 선택 방식은 single 또는 range만 허용합니다.
 DateTimePicker.create('#range', { selectionMode: 'multiple' });
+import type { PeriodOption } from '@daracl/datetimepicker';
+const periodOptions: PeriodOption[] = [{ value: '1w', label: '1주' }, { value: '1m', label: '1달' }, { value: '10d' }];
+const periodPicker = DateTimePicker.create('#range', { selectionMode: 'range', periodOptions });
+DateTimePicker.create('#range', { selectionMode: 'range', period: '1m' });
+DateTimePicker.create('#range', { selectionMode: 'range', period: null });
+// @ts-expect-error period 는 문자열이어야 한다.
+DateTimePicker.create('#range', { selectionMode: 'range', period: 7 });
+const periodApplied: boolean = periodPicker.setPeriod('3m');
+void periodApplied;
+// @ts-expect-error periodOptions 의 value 는 문자열이어야 한다.
+DateTimePicker.create('#range', { selectionMode: 'range', periodOptions: [{ value: 7 }] });

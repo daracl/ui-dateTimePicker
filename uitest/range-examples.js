@@ -20,6 +20,8 @@ export function createRangeExamples(options, recordEvent) {
   selectionMode: 'range', mode: 'date',
   maxRange: '6M',        // 최대 6개월 ('3M' · '1Y' · '2W', 숫자는 일 수)
   autoClose: true,       // periodSelect: false 로 프리셋 셀렉트박스를 끌 수 있음
+  // period: '1m',      // 처음 선택해 둘 기간 (endDate 또는 오늘 기준)
+  // periodOptions: [{ value: '1w', label: '1주' }, { value: '1m', label: '1달' }], // 셀렉트박스 항목 지정. picker.setPeriod('1m') 으로 코드에서 적용
   onChange: ({ value, startDate, endDate, days }) => {
     // 기간이 확정되어 이전 값과 달라졌을 때만 호출 (단일 선택과 같은 모양)
   }

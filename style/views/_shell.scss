@@ -1,0 +1,120 @@
+// .daracl-datetime-wrapper 의 껍데기: 표시 · 숨김, 달력 박스(.ddtp-datetime), RTL, 모드별(view-mode) 표시. .daracl-datetime-wrapper 안에서 include 한다.
+@use "@daracl/ui-style/abstracts" as style;
+@use "@daracl/ui-style/themes" as themes;
+
+@mixin shell {
+  z-index: #{style.$z-dropdown};
+  display: none;
+
+  *,
+  *::before,
+  *::after {
+    box-sizing: content-box;
+    color: themes.themed(font-color);
+  }
+
+  &.layer {
+    position: absolute;
+  }
+
+  input {
+    background-color: transparent;
+  }
+
+  &.show {
+    display: block;
+    animation: ddtp-fade-in 0.5s;
+    animation-fill-mode: forwards;
+  }
+
+  &.hide {
+    animation: ddtp-fade-out 0.5s;
+    animation-fill-mode: forwards;
+    //animation: daraToastHide 0.3s ease forwards;
+  }
+
+  &.embed {
+    display: block;
+  }
+
+  .ddtp-sun {
+    & > span {
+      color: themes.themed(sunday-color);
+    }
+  }
+
+  .ddtp-datetime {
+    border-radius: 4px;
+    padding: 10px;
+    width: 235px;
+    background-color: themes.themed(body-bg);
+    color: themes.themed(font-color);
+    box-shadow: #{style.$shadow-popup};
+
+    &.rtl {
+      direction: rtl;
+
+      .ddtp-header {
+        .ddtp-header-year,
+        .ddtp-header-month {
+          float: right;
+        }
+
+        .ddtp-date-move {
+          float: left;
+        }
+      }
+
+      .ddtp-body .ddtp-times {
+        .time-container {
+          display: block;
+        }
+        & > .ddtp-btn {
+          left: 0px;
+          right: auto;
+        }
+      }
+    }
+
+    &[view-mode="date"] .ddtp-body > .ddtp-days {
+      display: block;
+    }
+
+    &[view-mode="datetime"] {
+      .ddtp-body > .ddtp-times,
+      .ddtp-body > .ddtp-days {
+        display: block;
+      }
+    }
+
+    &[view-mode="time"] {
+      .ddtp-body > .ddtp-times {
+        display: block;
+      }
+
+      .ddtp-header {
+        display: none;
+      }
+    }
+
+    &[view-mode="year"] {
+      .ddtp-body > .ddtp-years {
+        display: flex;
+      }
+
+      .ddtp-header-month {
+        display: none;
+      }
+    }
+
+    &[view-mode="month"] {
+      .ddtp-body > .ddtp-months {
+        display: flex;
+      }
+
+      .ddtp-header-month {
+        display: none;
+      }
+    }
+  }
+}

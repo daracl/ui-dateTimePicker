@@ -16,6 +16,17 @@ export interface DateTimePickerOptions {
   maxRange?: number | string | null;
   /** range 에서 입력창 옆(inline 은 달력 위)에 기간 프리셋 셀렉트박스(1주 · 1개월 · 3개월 · 6개월 · 1년, 선택한 종료일 기준이며, 시작일만 있으면 그 시작일을, 아무것도 없으면 오늘을 종료일로 사용)를 표시할지 여부. 기본 true */
   periodSelect?: boolean;
+  /**
+   * 처음 선택해 둘 기간. '10d'(일) · '2w'(주) · '3m'(개월) · '1y'(년), 단위가 없으면 일. 종료일은 endDate(없으면 오늘)이고 시작일은 `종료일 − 기간`이며, 확정된 값으로 입력창에 표시한다.
+   * startDate 가 있으면 무시한다. 형식이 올바르지 않으면 시작일을 종료일과 같게 둔다(하루). 기간이 규칙(minRange · maxRange · 비활성 날짜 · minDate · maxDate)에 맞지 않으면 RangeError. range 에서만 쓴다.
+   */
+  period?: string | null;
+  /**
+   * 기간 프리셋 셀렉트박스의 항목. 주지 않으면 1w · 1m · 3m · 6m · 1y(문구는 period1w 같은 메시지 키)이다. 빈 배열이면 셀렉트박스를 만들지 않는다.
+   * value 는 maxRange 와 같은 형식('10d' 일 · '2w' 주 · '3m' 개월 · '1y' 년, 단위가 없으면 일)이고 중복할 수 없다. 형식이 올바르지 않거나 중복되면 RangeError.
+   * label 을 생략하면 메시지 키(period + value)나 단위 메시지('2w' → periodWeeks)를 쓴다. 예: [{ value: '1w', label: '1주' }, { value: '1m', label: '1달' }]
+   */
+  periodOptions?: PeriodOption[];
   allowSameDate?: boolean;
   allowReverse?: boolean;
   resetRangeOnStart?: boolean;
@@ -58,6 +69,14 @@ export interface DateTimePickerOptions {
   afterChangeDatepicker?: OptionCallback; // 년,월,일의 날짜가 변경 된후 호출
   onClose?: OptionCallback;
   beforeDrawDate?: OptionCallback; // 날짜 호출 전에 호출.
+}
+
+/** 기간 프리셋 셀렉트박스의 항목. */
+export interface PeriodOption {
+  /** 기간. '10d'(일) · '2w'(주) · '3m'(개월) · '1y'(년), 단위가 없으면 일 */
+  value: string;
+  /** 셀렉트박스에 보일 문구. 생략하면 메시지에서 가져온다 */
+  label?: string;
 }
 
 /** onChange 로 전달되는 값. 단일 선택은 startDate 와 endDate 가 같은 값이고, 기간 선택은 확정된 기간이다. */

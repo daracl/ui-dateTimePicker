@@ -1,0 +1,87 @@
+// 달력 머리글(년 · 월 · 이동 버튼 · 오늘 버튼). .daracl-datetime-wrapper 안에서 include 한다.
+@use "@daracl/ui-style/themes" as themes;
+
+@mixin header {
+  .ddtp-header {
+    display: flex;
+    align-items: center;
+    padding: 2px 5px 10px;
+    line-height: 25px;
+    height: 25px;
+    vertical-align: middle;
+
+    .ddtp-header-year {
+      font-weight: bold;
+      margin: 0 6px 0 0;
+      flex-shrink: 0;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    .ddtp-header-month {
+      font-weight: bold;
+      margin: 0 6px 0 0;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 13px;
+      vertical-align: top;
+      cursor: pointer;
+    }
+
+    .ddtp-date-move {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      margin-inline-start: auto;
+      flex-shrink: 0;
+      vertical-align: top;
+      float: right;
+      direction: ltr;
+
+      button.ddtp-today {
+        &[hidden] {
+          display: none;
+        }
+
+        padding: 0 5px;
+        height: 22px;
+        margin: 0 3px 0 0;
+        font: inherit;
+        font-size: 11px;
+        line-height: 22px;
+        cursor: pointer;
+        border: 1px solid themes.themed(input-border-color);
+        border-radius: 4px;
+        background: themes.themed(body-bg);
+        color: themes.themed(font-color);
+
+        &:hover {
+          background: themes.themed(hover-bg);
+          color: themes.themed(hover-color);
+        }
+      }
+
+      .ddtp-move-btn {
+        text-decoration: none;
+        font-weight: bold;
+        display: inline-block;
+        height: 24px;
+
+        > svg {
+          fill: themes.themed(font-color);
+        }
+
+        &:hover {
+          background-color: themes.themed(hover-bg);
+        }
+      }
+
+      &::after {
+        content: "";
+        clear: both;
+      }
+    }
+  }
+}

@@ -1,5 +1,5 @@
 import { addPeriod, calendarDay, cloneDate, parseRangePeriod, rangeResult, RangePeriod } from './util/range';
-import { DateTimePickerOptions, DateRangeResult, DateRangeState } from "./types/DateTimePickerOptions";
+import { DateTimePickerOptions, DateRangeResult, DateRangeState, PeriodOption } from "./types/DateTimePickerOptions";
 import { MessageOptions } from "./types/Message";
 import format from "./format";
 import parser from "./util/parser";
@@ -63,15 +63,10 @@ let daraDatetimeIdx = 0;
 // 요소별 현재 인스턴스. 같은 요소에 다시 생성하면 이전 인스턴스를 destroy 한다.
 const INSTANCES = new WeakMap<HTMLElement, DateTimePicker>();
 
-// 기간 프리셋(셀렉트박스). 키는 메시지 키(period1w, period1m ...)와 연결된다. 오늘을 종료일로 두고 시작일은 기간만큼 뺀다.
-interface PeriodPreset { key: string; period: RangePeriod }
-const PERIOD_PRESETS: PeriodPreset[] = [
-  { key: '1w', period: { value: 1, unit: 'W' } },
-  { key: '1m', period: { value: 1, unit: 'M' } },
-  { key: '3m', period: { value: 3, unit: 'M' } },
-  { key: '6m', period: { value: 6, unit: 'M' } },
-  { key: '1y', period: { value: 1, unit: 'Y' } },
-];
+// 기간 프리셋(셀렉트박스). key 는 옵션의 value, period 는 그 해석 결과다. 선택한 종료일(없으면 시작일, 그것도 없으면 오늘)을 종료일로 두고 시작일은 기간만큼 뺀다.
+interface PeriodPreset { key: string; label: string; period: RangePeriod }
+// periodOptions 를 주지 않았을 때의 기본 항목. 문구는 메시지 키(period1w, period1m ...)로 바꾼다.
+const DEFAULT_PERIOD_VALUES = ['1w', '1m', '3m', '6m', '1y'];
 
 /**
  * date timepicker
@@ -95,6 +90,7 @@ export class DateTimePicker {
   private periodField: HTMLElement | null = null;
   private periodInputPadding = '';
   private periodKey = '';
+  private periodPresets: PeriodPreset[] = [];
   // editable: false 로 우리가 입력창에 readonly 를 적용했는지. destroy 에서는 우리가 바꾼 경우에만 되돌린다. (호스트가 이미 readonly 로 둔 입력창은 그대로 둔다)
   private readOnlyApplied = false;
   // onChange 로 마지막으로 알린(또는 처음 표시한) 값. 새 값이 이 값과 다를 때만 onChange 를 호출한다.
@@ -256,7 +252,7 @@ export class DateTimePicker {
 
     this.createDatetimeTemplate();
     if (this.isRange) this.initRangeTemplate();
-    if (this.isRange && this.options.periodSelect) this.initPeriodSelect();
+    if (this.isRange && this.options.periodSelect && this.periodPresets.length) this.initPeriodSelect();
 
     if (this.isTimeMode()) {
       this.hourInputEle = this.datetimeElement.querySelector(".ddtp-hour") as HTMLInputElement;
@@ -1201,10 +1197,18 @@ export class DateTimePicker {
     for (const date of o.disabledDates || []) this.disabledRangeDays.add(calendarDay(this.parseRangeDate(date)!));
     if ((o.disabledWeekdays || []).some(day => !Number.isInteger(day) || day < 0 || day > 6)) throw new RangeError('Invalid disabled weekday');
     let start = this.parseRangeDate(o.startDate), end = this.parseRangeDate(o.endDate);
+    // period 는 시작일이 없을 때만 쓴다. 종료일은 endDate, 없으면 오늘이고 시작일은 종료일 − 기간이다. (startDate 가 있으면 무시)
+    // 형식이 올바르지 않으면 기간을 알 수 없으므로 시작일을 종료일과 같게 둔다. (규칙에 맞지 않는 기간은 아래 검증에서 RangeError)
+    if (o.period != null && !start) {
+      const period = typeof o.period === 'string' ? parseRangePeriod(o.period) : null;
+      if (!end) { end = new Date(); end.setHours(0, 0, 0, 0); }
+      start = period ? addPeriod(end, period, -1) : cloneDate(end);
+    }
     // 시작일 / 종료일 중 하나만 주어지면 같은 값으로 양쪽을 채운다. 옵션 규칙(minRange 등)에 맞지 않으면 채우지 않는다.
     const only = start || end;
     if (only && (!start || !end) && this.validRange(only, only)) { start = cloneDate(only); end = cloneDate(only); }
     if (!this.validRange(start, end) || (!start && end)) throw new RangeError('Invalid initial range');
+    this.periodPresets = this.resolvePeriodPresets();
     this.rangeState = { ...rangeResult(start, end), selecting: start && !end ? 'end' : 'start', committed: !!end, activeDate: null };
     this.committedRange = end ? rangeResult(start, end) : rangeResult(null, null);
     this.hasCommittedRange = !!end;
@@ -1497,11 +1501,11 @@ export class DateTimePicker {
   //  2) 시작일만 선택한 상태면 그 시작일을 종료일로 삼는다.            (시작일 11/12 + 1개월 → 10/12 ~ 11/12)
   //  3) 아무것도 선택하지 않았으면 오늘을 종료일로 둔다.               (오늘 11/5 + 1개월 → 10/5 ~ 11/5)
   // 적용(applyPeriod)과 항목별 가용 여부(syncPeriodSelect)가 같은 계산을 쓰므로 비활성 · 숨김 항목도 같은 기준이다.
-  private periodPresetRange(preset: PeriodPreset, withTime: boolean): { start: Date; end: Date } {
+  private periodPresetRange(period: RangePeriod, withTime: boolean): { start: Date; end: Date } {
     const { startDate, endDate } = this.rangeState, base = endDate || startDate;
     const end = base ? new Date(base.getTime()) : new Date();
     if (!base) end.setHours(0, 0, 0, 0);
-    const start = addPeriod(end, preset.period, -1);
+    const start = addPeriod(end, period, -1);
     if (withTime && this.isTimeMode()) {
       // 시간은 날짜를 따라가지 않고 시작 / 종료 시간 그룹의 값을 따른다. 이미 선택한 종료일의 시간은 그대로 둔다.
       const [startHour, startMinute] = this.rangeTimeInputs('start');
@@ -1524,13 +1528,15 @@ export class DateTimePicker {
     placeholder.value = '';
     placeholder.textContent = String(this.language.getMessage('periodPlaceholder'));
     select.append(placeholder);
-    for (const preset of PERIOD_PRESETS) {
+    for (const preset of this.periodPresets) {
       const option = document.createElement('option');
       option.value = preset.key;
-      option.textContent = String(this.language.getMessage(`period${preset.key}`));
+      option.textContent = preset.label;
       select.append(option);
     }
-    select.addEventListener('change', event => this.applyPeriod(select.value, event));
+    select.addEventListener('change', event => {
+      if (!this.applyPeriod(parseRangePeriod(select.value), event)) { this.periodKey = ''; this.syncPeriodSelect(); }
+    });
     if (this.options.inline) {
       const row = document.createElement('div');
       row.className = 'ddtp-period';
@@ -1585,20 +1591,46 @@ export class DateTimePicker {
     this.periodField = null;
   }
 
-  // 프리셋을 고르면 기간을 채우고 바로 확정한다. (셀렉트박스는 팝업 밖에 있어 확인 버튼을 누를 수 없다)
-  private applyPeriod(key: string, event: Event) {
-    const preset = PERIOD_PRESETS.find(item => item.key === key);
-    const restore = () => { this.periodKey = ''; this.syncPeriodSelect(); };
-    if (!preset || this.destroyed) return restore();
-    const { start, end } = this.periodPresetRange(preset, true);
+  // periodOptions({ value, label }[]) 를 프리셋으로 해석한다. 주지 않으면 기본 5개 항목이다. value 는 maxRange 와 같은 형식('10d' · '2w' · '3m' · '1y')이다.
+  // label 을 생략하면 메시지 키(period + value)를, 그것도 없으면 단위 메시지('2w' → periodWeeks)를 쓰고, 일 단위는 value 를 그대로 쓴다. 올바르지 않거나 중복된 value 는 RangeError.
+  private resolvePeriodPresets(): PeriodPreset[] {
+    const list: PeriodOption[] = this.options.periodOptions ?? DEFAULT_PERIOD_VALUES.map(value => ({ value }));
+    if (!Array.isArray(list)) throw new RangeError('Invalid period options');
+    const seen = new Set<string>();
+    return list.map(item => {
+      const period = typeof item?.value === 'string' ? parseRangePeriod(item.value) : null;
+      if (!period) throw new RangeError('Invalid period options');
+      const id = `${period.value}${period.unit}`;
+      if (seen.has(id)) throw new RangeError('Duplicate period options');
+      seen.add(id);
+      const key = item.value.trim(), unitMessage = { W: 'periodWeeks', M: 'periodMonths', Y: 'periodYears', D: '' }[period.unit];
+      const message = this.language.getMessage(`period${key.toLowerCase()}`) ?? (unitMessage ? String(this.language.getMessage(unitMessage)).replace('{n}', String(period.value)) : key);
+      return { key, label: item.label != null ? String(item.label) : String(message), period };
+    });
+  }
+
+  /**
+   * 기간 프리셋을 코드로 적용한다. 선택한 종료일(없으면 시작일, 그것도 없으면 오늘)을 종료일로 삼고 시작일을 `종료일 − 기간`으로 채운 뒤 바로 확정한다.
+   * 셀렉트박스에서 고른 것과 같지만 `onSelect` 는 호출하지 않는다. (`periodOptions` 에 없는 값도 올바른 형식이면 적용한다)
+   * @param value 기간. '1w'(주) · '1m'(개월) · '1y'(년) · '10d'(일), 단위가 없으면 일
+   * @returns 적용하고 확정했으면 true. 기간 선택이 아니거나, 형식이 올바르지 않거나, 규칙(minRange · maxRange · 비활성 날짜 · minDate · maxDate)에 맞지 않거나, beforeSelectRange 가 거부하면 false
+   */
+  public setPeriod(value: string): boolean {
+    return this.applyPeriod(typeof value === 'string' ? parseRangePeriod(value) : null);
+  }
+
+  // 기간을 채우고 바로 확정한다. (셀렉트박스는 팝업 밖에 있어 확인 버튼을 누를 수 없다) event 가 있으면 onSelect 도 호출한다.
+  private applyPeriod(period: RangePeriod | null, event?: Event): boolean {
+    if (!period || !this.isRange || this.destroyed) return false;
+    const { start, end } = this.periodPresetRange(period, true);
     this.rangeError = '';
     this.rangeRejectedDay = null;
-    // 규칙(minRange / maxRange / 비활성 날짜 / minDate · maxDate)에 맞지 않거나 beforeSelectRange · onSelect 가 거부하면 선택을 되돌린다.
-    if (!this.validRange(start, end) || !this.applyRange(start, end, event)) return restore();
+    // 규칙(minRange / maxRange / 비활성 날짜 / minDate · maxDate)에 맞지 않거나 beforeSelectRange · onSelect 가 거부하면 적용하지 않는다.
+    if (!this.validRange(start, end) || !this.applyRange(start, end, event)) return false;
     this.showRangeMonths(start, end);
     this.refresh(false);
     this.syncRangeTime();
-    this.confirmRange();
+    return this.confirmRange();
   }
 
   // 프리셋을 적용한 뒤 보여 줄 달을 정한다. 왼쪽(첫) 패널은 시작일의 달, 마지막 패널은 종료일의 달이 되게 한다. (종료일 12월 + 6개월 → 6월 | 12월)
@@ -1631,8 +1663,8 @@ export class DateTimePicker {
     if (key === this.periodKey) return;
     this.periodKey = key;
     let selected = '', visible = 0;
-    for (const preset of PERIOD_PRESETS) {
-      const { start, end } = this.periodPresetRange(preset, false);
+    for (const preset of this.periodPresets) {
+      const { start, end } = this.periodPresetRange(preset.period, false);
       const option = select.querySelector(`option[value="${preset.key}"]`) as HTMLOptionElement;
       const exceeds = this.exceedsMaxRange(start, end), disabled = !this.validRange(start, end);
       if (option.hidden !== exceeds) option.hidden = exceeds; // maxRange 를 넘는 항목은 보이지 않게 한다.

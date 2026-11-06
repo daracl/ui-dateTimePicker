@@ -1,0 +1,51 @@
+// 년 선택(.ddtp-years). .daracl-datetime-wrapper 안에서 include 한다.
+@use "@daracl/ui-style/themes" as themes;
+
+@mixin years {
+  .ddtp-years {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: space-between;
+
+    > .ddtp-year {
+      position: relative;
+      flex: 1 0 25%;
+      margin-bottom: 8px;
+      line-height: 50px;
+      text-align: center;
+      cursor: pointer;
+
+      &:before {
+        content: "";
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        display: block;
+        width: 50px;
+        height: 50px;
+        background-color: var(--ddtp-select-bg);
+        border-radius: 50%;
+        opacity: 0;
+        z-index: 0;
+        transition: opacity 0.2s ease-in;
+      }
+
+      &:active:before,
+      &:hover:before {
+        opacity: 0.5;
+        transition: opacity 0.2s ease-out;
+      }
+
+      &.disabled {
+        background-color: themes.themed(disabled-bg);
+        opacity: 0.5;
+        cursor: auto;
+
+        &:before {
+          background-color: transparent;
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,44 @@
+// 달력 본문(.ddtp-body)과 날짜 · 시간 · 월 하위 영역. .daracl-datetime-wrapper 안에서 include 한다.
+@use "@daracl/ui-style/themes" as themes;
+@use './days';
+@use './times';
+@use './months';
+
+@mixin body {
+  .ddtp-body {
+    margin: -2px -10px;
+    font-size: 13px;
+
+    > * {
+      display: none;
+    }
+
+    button {
+      display: block;
+      width: 100%;
+      margin-bottom: 7px;
+      padding: 3px 0px;
+      border-radius: 4px;
+      border-color: themes.themed(border-color);
+      border-width: 1px;
+      border-style: solid;
+      background-color: themes.themed(body-bg);
+
+      &:hover {
+        background-color: themes.themed(hover-bg);
+      }
+    }
+
+    .ddtp-today {
+      &:hover {
+        background-color: themes.themed(hover-bg);
+      }
+    }
+
+    @include days.days;
+
+    @include times.times;
+
+    @include months.months;
+  }
+}

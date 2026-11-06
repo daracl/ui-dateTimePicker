@@ -1250,3 +1250,113 @@ test('onChange for a range is called when the range is confirmed with value, sta
   await page.locator('.daracl-datetime-wrapper.show .ddtp-day[data-day="11,9"]:not(.old):not(.new)').first().click();
   assert.deepEqual(await calls(), [{ value: '2026-11-03 ~ 2026-11-09', input: '2026-11-03 ~ 2026-11-09', days: 7 }]);
 });
+
+test('setPeriod fills and commits a period counted back from the end date without calling onSelect', async () => {
+  await page.clock.setFixedTime('2026-11-05T12:00:00-05:00');
+  await page.evaluate(() => { window.log = []; });
+  await page.evaluate(() => {
+    window.picker?.destroy();
+    window.picker = Daracl.dateTimePicker.create('#input', { selectionMode: 'range', format: 'YYYY-MM-DD',
+      onSelect: () => { log.push('select'); }, onRangeConfirm: () => { log.push('confirm'); }, onChange: change => { log.push('change:' + change.value); } });
+  });
+  // 아무것도 선택하지 않았으면 오늘이 종료일이다.
+  assert.equal(await page.evaluate(() => picker.setPeriod('1w')), true);
+  assert.deepEqual(await rangeOf(), { start: '2026-10-29', end: '2026-11-05', committed: true, complete: true });
+  assert.equal(await page.locator('#input').inputValue(), '2026-10-29 ~ 2026-11-05');
+  assert.equal(await page.locator('#input + select').inputValue(), '1w'); // 셀렉트박스 표시도 따라간다.
+  assert.deepEqual(await page.evaluate(() => log), ['confirm', 'change:2026-10-29 ~ 2026-11-05']); // onSelect 는 건너뛴다.
+  // 선택한 종료일을 유지하고 시작일만 다시 계산한다. 대소문자 · 목록에 없는 값도 올바른 형식이면 적용한다.
+  assert.equal(await page.evaluate(() => picker.setPeriod('1M')), true);
+  assert.deepEqual(await rangeOf(), { start: '2026-10-05', end: '2026-11-05', committed: true, complete: true });
+  assert.equal(await page.evaluate(() => picker.setPeriod('10d')), true);
+  assert.deepEqual(await rangeOf(), { start: '2026-10-26', end: '2026-11-05', committed: true, complete: true });
+  assert.equal(await page.locator('#input + select').inputValue(), ''); // 목록과 일치하는 항목이 없으면 안내 문구
+  // 올바르지 않은 값은 false 이고 선택은 그대로다.
+  for (const bad of ['', 'abc', '3x', '0m', '-1m', 7, null, undefined]) assert.equal(await page.evaluate(value => picker.setPeriod(value), bad), false, String(bad));
+  assert.deepEqual(await rangeOf(), { start: '2026-10-26', end: '2026-11-05', committed: true, complete: true });
+  // 사용자가 셀렉트박스에서 고르는 경우는 onSelect 를 호출한다.
+  await page.locator('#input + select').selectOption('3m');
+  assert.ok((await page.evaluate(() => log)).includes('select'));
+  // 규칙(maxRange)에 맞지 않으면 false 이고 선택을 바꾸지 않는다.
+  await createLayer({ maxRange: '1M' });
+  assert.equal(await page.evaluate(() => picker.setPeriod('3m')), false);
+  assert.deepEqual(await rangeOf(), { start: null, end: null, committed: false, complete: false });
+  assert.equal(await page.evaluate(() => picker.setPeriod('1m')), true);
+  // beforeSelectRange 가 거부하면 false.
+  await page.evaluate(() => { picker.destroy(); window.picker = Daracl.dateTimePicker.create('#input', { selectionMode: 'range', beforeSelectRange: () => false }); });
+  assert.equal(await page.evaluate(() => picker.setPeriod('1w')), false);
+  // periodSelect: false 여도 동작하고, 단일 선택 · destroy 후에는 false.
+  await createLayer({ periodSelect: false });
+  assert.equal(await page.evaluate(() => picker.setPeriod('1y')), true);
+  assert.deepEqual(await rangeOf(), { start: '2025-11-05', end: '2026-11-05', committed: true, complete: true });
+  assert.equal(await page.evaluate(() => { const single = Daracl.dateTimePicker.create('#calendar', { inline: true }); const result = single.setPeriod('1w'); single.destroy(); return result; }), false);
+  assert.equal(await page.evaluate(() => { picker.destroy(); return picker.setPeriod('1w'); }), false);
+  // 열려 있지 않아도 안전하고, datetime 은 시작 / 종료 시간 그룹의 값을 따른다.
+  await page.evaluate(() => { window.picker = Daracl.dateTimePicker.create('#calendar', { inline: true, selectionMode: 'range', mode: 'datetime', format: 'YYYY-MM-DD HH:mm', initialDate: '2026-11-05 00:00' }); });
+  await page.locator('.ddtp-range-time[data-endpoint="start"] .ddtp-hour').fill('09');
+  await page.locator('.ddtp-range-time[data-endpoint="end"] .ddtp-hour').fill('18');
+  assert.equal(await page.evaluate(() => picker.setPeriod('1w')), true);
+  assert.match((await state()).startDate, /^2026-10-29 09:00$/); assert.match((await state()).endDate, /^2026-11-05 18:00$/);
+});
+
+test('periodOptions customises the period select items, labels and validation', async () => {
+  await page.clock.setFixedTime('2026-11-05T12:00:00-05:00');
+  const items = () => page.locator('#input + select option').evaluateAll(options => options.map(option => [option.value, option.textContent, option.hidden]));
+  await createLayer({ periodOptions: [{ value: '1w', label: '1주' }, { value: '1m', label: '1달' }, { value: '10d', label: '열흘' }, { value: '2w' }, { value: '5d' }] });
+  // 첫 항목은 안내 문구다. label 을 생략하면 단위 메시지(2w → 2 week(s)), 일 단위는 value 를 쓴다.
+  assert.deepEqual((await items()).slice(1), [['1w', '1주', false], ['1m', '1달', false], ['10d', '열흘', false], ['2w', '2 week(s)', false], ['5d', '5d', false]]);
+  await page.locator('#input + select').selectOption('10d');
+  assert.equal(await page.locator('#input').inputValue(), '2026-10-26 ~ 2026-11-05');
+  assert.equal(await page.locator('#input + select').inputValue(), '10d');
+  // 기본 문구(메시지 키)를 쓰는 항목은 label 을 생략할 수 있다.
+  await createLayer({ periodOptions: [{ value: '3m' }, { value: '1y' }] });
+  assert.deepEqual((await items()).slice(1).map(item => item[0]), ['3m', '1y']);
+  assert.equal((await items())[1][1], ENGLISH.period3m);
+  // maxRange 를 넘는 항목은 숨긴다.
+  await createLayer({ maxRange: '1M', periodOptions: [{ value: '1w', label: '1주' }, { value: '3m', label: '3달' }] });
+  assert.deepEqual((await items()).slice(1), [['1w', '1주', false], ['3m', '3달', true]]);
+  // 빈 배열이면 셀렉트박스를 만들지 않고 입력창도 감싸지 않는다. setPeriod 는 그대로 쓸 수 있다.
+  await createLayer({ periodOptions: [] });
+  assert.equal(await page.locator('select.ddtp-period-select, ddtp-period-field').count(), 0);
+  assert.equal(await page.evaluate(() => picker.setPeriod('1w')), true);
+  // 문구는 텍스트로만 들어간다.
+  await createLayer({ periodOptions: [{ value: '1w', label: '<b>x</b>' }] });
+  assert.equal(await page.locator('#input + select b').count(), 0);
+  assert.equal((await items())[1][1], '<b>x</b>');
+  // 올바르지 않거나 중복된 value 는 RangeError.
+  const rejected = await page.evaluate(() => [[{ value: 'abc' }], [{ value: 7 }], [{ value: '1w' }, { value: '1W' }], [{ value: '7d' }, { value: '1w' }, { value: '7' }], 'x', [null]].map(periodOptions => {
+    try { Daracl.dateTimePicker.create('#calendar', { inline: true, selectionMode: 'range', periodOptions }).destroy(); return false; } catch (error) { return error instanceof RangeError; }
+  }));
+  assert.deepEqual(rejected, [true, true, true, true, true, true]);
+});
+
+test('period option fills and commits the initial range from the end date or today', async () => {
+  await page.clock.setFixedTime('2026-11-05T12:00:00-05:00');
+  await createLayer({ period: '1m' });
+  assert.deepEqual(await rangeOf(), { start: '2026-10-05', end: '2026-11-05', committed: true, complete: true });
+  assert.equal(await page.locator('#input').inputValue(), '2026-10-05 ~ 2026-11-05');
+  assert.equal(await page.locator('#input + select').inputValue(), '1m'); // 셀렉트박스도 일치하는 항목을 보여 준다.
+  // endDate 가 있으면 그 날짜가 종료일이다.
+  await createLayer({ period: '2w', endDate: '2026-10-20' });
+  assert.deepEqual(await rangeOf(), { start: '2026-10-06', end: '2026-10-20', committed: true, complete: true });
+  // startDate 가 있으면 무시한다.
+  await createLayer({ period: '1y', startDate: '2026-11-01', endDate: '2026-11-03' });
+  assert.deepEqual(await rangeOf(), { start: '2026-11-01', end: '2026-11-03', committed: true, complete: true });
+  await createLayer({ period: null });
+  assert.deepEqual(await rangeOf(), { start: null, end: null, committed: false, complete: false });
+  // 올바르지 않은 형식은 시작일을 종료일과 같게 둔다. (endDate 가 없으면 오늘)
+  for (const bad of ['abc', 7, '', '0m']) {
+    await createLayer({ period: bad });
+    assert.deepEqual(await rangeOf(), { start: '2026-11-05', end: '2026-11-05', committed: true, complete: true }, String(bad));
+  }
+  await createLayer({ period: 'abc', endDate: '2026-10-20' });
+  assert.deepEqual(await rangeOf(), { start: '2026-10-20', end: '2026-10-20', committed: true, complete: true });
+  await createLayer({ period: 'abc', startDate: '2026-11-01', endDate: '2026-11-03' }); // startDate 가 있으면 무시
+  assert.deepEqual(await rangeOf(), { start: '2026-11-01', end: '2026-11-03', committed: true, complete: true });
+  // 규칙 위반은 RangeError, 단일 선택은 무시한다.
+  const results = await page.evaluate(() => [[{ period: '3m', maxRange: '1M' }], [{ period: '1w', disabledDates: ['2026-11-03'] }], [{ period: 'abc', allowSameDate: false }]].map(([options]) => {
+    try { Daracl.dateTimePicker.create('#calendar', { inline: true, selectionMode: 'range', ...options }).destroy(); return false; } catch (error) { return error instanceof RangeError; }
+  }));
+  assert.deepEqual(results, [true, true, true]);
+  assert.equal(await page.evaluate(() => { const single = Daracl.dateTimePicker.create('#calendar', { inline: true, period: '1m' }); single.destroy(); return true; }), true);
+});

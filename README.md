@@ -307,6 +307,8 @@ const dateTimeRange = Daracl.dateTimePicker.create('#dateTimeRange', {
 | `startDate`, `endDate` | `null` | `Date` 또는 기존 `format`에 맞춘 문자열. 둘 중 하나만 지정하면 같은 값으로 양쪽을 채웁니다(`minRange`, `allowSameDate` 등 규칙에 맞지 않으면 채우지 않음) |
 | `minRange` | `0` | 양 끝을 포함한 최소 달력 일수. 0은 제한 없음 |
 | `maxRange` | `null` | 선택할 수 있는 최대 기간. 숫자나 단위 없는 문자열(`30`, `'30'`, `'30D'`)은 양 끝을 포함한 **일 수**, `'2W'`(주) · `'3M'`(개월) · `'1Y'`(년)은 **달력 단위**입니다. `'3M'`은 종료일에서 3개월을 뺀 날짜(말일은 보정)가 시작일보다 늦지 않아야 합니다. 예: 시작 11/5이면 2/5까지. null은 제한 없음, 올바르지 않은 값은 `RangeError` |
+| `period` | `null` | range의 초기 기간 `'10d'` · `'2w'` · `'3m'` · `'1y'`(단위가 없으면 일). `endDate`(없으면 오늘)를 종료일로 삼아 시작일을 `종료일 − 기간`으로 채우고 **확정된 값으로** 입력창에 표시합니다. `startDate`가 있으면 무시합니다. 형식이 올바르지 않으면 시작일을 종료일과 같게 둡니다(하루). 규칙에 맞지 않으면 `RangeError` |
+| `periodOptions` | `1w · 1m · 3m · 6m · 1y` | 기간 프리셋 셀렉트박스의 항목 `[{ value, label }]`. `value`는 `maxRange`와 같은 형식(`'10d'` 일 · `'2w'` 주 · `'3m'` 개월 · `'1y'` 년, 단위가 없으면 일)이고 중복할 수 없습니다. `label`을 생략하면 메시지 키(`period3m` 등)나 단위 메시지(`periodWeeks` 등)를 씁니다. 빈 배열이면 셀렉트박스를 만들지 않습니다. 올바르지 않거나 중복된 `value`는 `RangeError` |
 | `periodSelect` | `true` | range에서 기간 프리셋 셀렉트박스(1주 · 1개월 · 3개월 · 6개월 · 1년)를 표시합니다. 입력창 **안쪽 오른쪽**에 겹쳐 입력창과 하나의 컨트롤처럼 보이고, `inline`은 달력 위에 들어갑니다. 입력창을 `<ddtp-period-field>`로 감싸므로 DOM 위치를 건드리고 싶지 않으면 `false`로 끄세요 |
 | `allowSameDate` | `true` | 동일 날짜 허용. datetime도 날짜 기준이며 시간 순서는 별도 검사 |
 | `allowReverse` | `true` | 시작일보다 이른 날을 고르면 먼저 고른 날을 종료일, 새로 고른 날을 시작일로 교환합니다. `false`이면 선택을 거부합니다 |
@@ -349,6 +351,17 @@ Daracl.dateTimePicker.create('#responsiveRange', {
 - 직접 기간을 바꾸거나 초기화하면 선택이 해제되고, 현재 기간이 `종료일 − 기간`과 같으면 그 항목이 선택된 것으로 표시됩니다.
 - `datetime`에서는 시작일에 시작 시간 그룹의 값을 쓰고, 이미 선택한 종료일의 날짜와 시간은 그대로 둡니다. 종료일이 새로 만들어지는 경우(시작일을 종료일로 삼거나 오늘)에는 날짜는 그대로 두고 **종료 시간 그룹**의 시간을 씁니다(시작일을 고를 때 붙어 있던 시작 시간은 쓰이지 않습니다). `beforeSelectRange`나 `onSelect`가 `false`를 반환하면 선택이 취소되고 셀렉트박스도 되돌아갑니다.
 - 문구는 메시지 키로 바꿉니다: `periodPlaceholder`, `period1w`, `period1m`, `period3m`, `period6m`, `period1y`. 단위 maxRange 안내는 `rangeMaxPeriod`(`{period}`)와 `periodWeeks` · `periodMonths` · `periodYears`(`{n}`)를 씁니다.
+
+- **항목은 `periodOptions`로 바꿀 수 있습니다.** `label`을 주면 메시지보다 우선합니다. `maxRange` 숨김 · 비활성 규칙은 모든 항목에 똑같이 적용됩니다.
+- **`setPeriod(value)`로 코드에서 같은 동작을 실행합니다.** 선택한 종료일(없으면 시작일, 그것도 없으면 오늘)을 종료일로 삼아 시작일을 채우고 바로 확정합니다. 셀렉트박스에서 고른 것과 같지만 `onSelect`는 호출하지 않습니다(`beforeSelectRange` · `onRangeChange` · `onRangeConfirm` · `onChange`는 호출). `periodOptions`에 없는 값도 올바른 형식이면 적용하고, 규칙에 맞지 않거나 기간 선택이 아니거나 `destroy()` 뒤이면 `false`를 반환합니다. `periodSelect: false`여도 동작합니다.
+
+```javascript
+const picker = Daracl.dateTimePicker.create('#period', {
+  selectionMode: 'range',
+  periodOptions: [{ value: '1w', label: '1주' }, { value: '1m', label: '1달' }, { value: '10d', label: '열흘' }],
+});
+picker.setPeriod('1m'); // 종료일 − 1달 ~ 종료일 (true / false)
+```
 
 ```javascript
 Daracl.dateTimePicker.create('#period', {
@@ -398,7 +411,7 @@ Daracl.dateTimePicker.create('#period', {
 
 선택 이벤트 순서는 `beforeSelectRange` → 기존 `onSelect` → `onRangeStart`(새 시작일일 때) → `onRangeChange` → `onRangeComplete`(완료일 때) → `onRangeConfirm`(자동 확정일 때)입니다. 기존 `onSelect(value, mode, event)`의 `value`는 Range에서 기간 문자열이며 false로 거부할 수 있습니다. `beforeChangeDatepicker` / `afterChangeDatepicker`는 기존대로 달력 다시 그리기 훅이며 월 개수만큼 중복 호출하지 않습니다.
 
-공개 메서드: `getRange()`, `getRangeState()`, `confirmRange(): boolean`, `clearRange(): boolean`, `cancelRange()`. `destroy()`는 반응형 감지 이벤트도 해제합니다. 반환값 false는 적용/확정 불가능을 뜻합니다.
+공개 메서드: `getRange()`, `getRangeState()`, `confirmRange(): boolean`, `clearRange(): boolean`, `cancelRange()`, `setPeriod(value): boolean`. `destroy()`는 반응형 감지 이벤트도 해제합니다. 반환값 false는 적용/확정 불가능을 뜻합니다.
 
 ```typescript
 import { DateTimePicker, type DateRangeResult, type DateRangeState } from '@daracl/datetimepicker';

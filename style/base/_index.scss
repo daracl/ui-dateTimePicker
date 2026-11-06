@@ -1,0 +1,14 @@
+@use "@daracl/ui-style/abstracts" as style;
+@use "@daracl/ui-style/base" as base;
+
+@mixin all {
+  // 전역 이름(fadeIn / fadeOut)은 ui-dialog / ui-toast 와 충돌하므로 ddtp- 접두사를 붙인다.
+  @include base.keyframes-fade("ddtp");
+
+  .daracl-datetime-hidden {
+    visibility: visible;
+    width: 0px;
+    height: 0px;
+    z-index: #{style.$z-dropdown};
+  }
+}
